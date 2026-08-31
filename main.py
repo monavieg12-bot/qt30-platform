@@ -92,7 +92,6 @@ def get_db():
             db.commit()
             db.refresh(master)
 
-            # 建立 2 筆過往得標歷史示範案例，展現完整履歷
             demo_job_1 = Job(
                 title="主臥衛浴乾濕分離整修與防水翻新",
                 category="衛浴整修",
@@ -184,66 +183,254 @@ COMMON_CSS = """
 }
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 body { background-color: var(--bg); color: var(--text); padding-bottom: 60px; line-height: 1.6; }
-.container { max-width: 960px; margin: 0 auto; padding: 20px; }
-header { border-bottom: 1px solid var(--border); padding: 20px 0; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-.brand { font-size: 24px; font-weight: 800; color: #60a5fa; text-decoration: none; display: flex; align-items: center; gap: 8px; }
-.master-profile { background: #0f172a; border: 1px solid var(--border); padding: 8px 16px; border-radius: 9999px; display: flex; align-items: center; gap: 10px; font-size: 14px; text-decoration: none; color: white; transition: 0.2s; }
-.master-profile:hover { border-color: #60a5fa; background: #1e293b; }
-.badge-points { background: #d97706; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; }
-.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+.container { max-width: 1040px; margin: 0 auto; padding: 20px; }
+nav { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--border); margin-bottom: 30px; flex-wrap: wrap; gap: 12px; }
+.brand { font-size: 22px; font-weight: 800; color: #60a5fa; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.nav-links { display: flex; gap: 15px; align-items: center; }
+.nav-links a { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: 0.2s; }
+.nav-links a:hover { color: #60a5fa; }
+.btn-nav-primary { background: var(--primary); color: white !important; padding: 8px 16px; border-radius: 8px; font-weight: bold; }
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 24px; margin-bottom: 24px; }
+.btn-primary { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: 0.2s; text-align: center; }
+.btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+.btn-secondary { background: #334155; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; transition: 0.2s; text-align: center; }
+.btn-secondary:hover { background: #475569; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
 .full-width { grid-column: span 2; }
 label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
-input, select, textarea { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: white; outline: none; font-size: 14px; }
+input, select, textarea { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: white; outline: none; font-size: 14px; }
 input:focus, textarea:focus, select:focus { border-color: var(--primary); }
-.btn-primary { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; }
-.btn-primary:hover { background: var(--primary-hover); }
-.job-card { position: relative; }
-.job-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-.job-title { font-size: 18px; color: #e2e8f0; }
-.job-meta { font-size: 13px; color: var(--text-muted); display: flex; gap: 10px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
-.badge-loc { background: #1e3a8a; color: #bfdbfe; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
-.badge-cat { background: #3730a3; color: #c7d2fe; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
-.job-desc { background: #0f172a; padding: 12px; border-radius: 8px; line-height: 1.6; font-size: 14px; margin-bottom: 15px; }
-.contact-box { display: flex; gap: 20px; font-size: 13px; background: #1e1b4b; border: 1px solid #3730a3; padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; color: #c7d2fe; }
-.section-title { font-size: 14px; font-weight: bold; color: #93c5fd; margin-bottom: 10px; }
-.quote-item { background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
-.quote-awarded { border-color: #a855f7; background: #241142; }
-.quote-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
-.quote-price { font-size: 18px; font-weight: 800; color: #34d399; }
-.quote-body { font-size: 13px; line-height: 1.6; color: #cbd5e1; }
-.rating-star { color: #fbbf24; font-weight: bold; font-size: 13px; margin-left: 5px; }
-.badge-verify { background: #065f46; color: #6ee7b7; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
-.badge-license { background: #1e3a8a; color: #93c5fd; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
-.tag-awarded { display: inline-block; background: #7e22ce; color: white; font-size: 12px; padding: 3px 8px; border-radius: 4px; margin-top: 6px; font-weight: bold; }
-.btn-award { background: #8b5cf6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.btn-award:hover { background: #7c3aed; }
-.quote-form-box { background: #1e1e38; border: 1px dashed #4f46e5; border-radius: 8px; padding: 15px; margin-top: 15px; }
-.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-.btn-quote { background: #10b981; color: white; border: none; padding: 10px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
-.btn-quote:hover { background: #059669; }
+.badge-verify { background: #065f46; color: #6ee7b7; font-size: 11px; padding: 3px 8px; border-radius: 4px; }
+.badge-license { background: #1e3a8a; color: #93c5fd; font-size: 11px; padding: 3px 8px; border-radius: 4px; }
+.badge-points { background: #d97706; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; }
 .badge { font-size: 12px; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
 .bg-green { background: #064e3b; color: #6ee7b7; }
 .bg-purple { background: #581c87; color: #d8b4fe; }
 .bg-gray { background: #334155; color: #94a3b8; }
-.review-form-box { background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155; }
-.review-item { border-left: 3px solid #fbbf24; padding-left: 10px; margin-bottom: 8px; font-size: 13px; }
-.review-form { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.quote-item { background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+.quote-awarded { border-color: #a855f7; background: #241142; }
+.quote-price { font-size: 18px; font-weight: 800; color: #34d399; }
+.quote-form-box { background: #1e1e38; border: 1px dashed #4f46e5; border-radius: 8px; padding: 15px; margin-top: 15px; }
+.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.btn-quote { background: #10b981; color: white; border: none; padding: 10px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
+.btn-quote:hover { background: #059669; }
+.btn-award { background: #8b5cf6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.btn-award:hover { background: #7c3aed; }
+.tag-awarded { display: inline-block; background: #7e22ce; color: white; font-size: 12px; padding: 3px 8px; border-radius: 4px; margin-top: 6px; font-weight: bold; }
 .template-btn { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-right: 6px; margin-bottom: 8px; transition: 0.2s; }
 .template-btn:hover { background: #2563eb; border-color: #3b82f6; }
 .template-group { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .filter-bar { display: flex; gap: 10px; background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
 .agree-label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .agree-label a { color: #60a5fa; text-decoration: underline; }
-.master-link { color: #93c5fd; text-decoration: none; font-weight: bold; }
-.master-link:hover { text-decoration: underline; color: #60a5fa; }
-footer { margin-top: 50px; border-top: 1px solid var(--border); padding-top: 25px; text-align: center; font-size: 13px; color: var(--text-muted); }
+.review-item { border-left: 3px solid #fbbf24; padding-left: 10px; margin-bottom: 8px; font-size: 13px; }
+.review-form { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+footer { margin-top: 60px; border-top: 1px solid var(--border); padding-top: 30px; text-align: center; font-size: 13px; color: var(--text-muted); }
 footer a { color: #94a3b8; text-decoration: none; margin: 0 10px; }
 footer a:hover { color: #60a5fa; text-decoration: underline; }
 """
 
+# 品牌官方首頁 (Landing Page)
 @app.get("/", response_class=HTMLResponse)
-async def home_page(
+async def landing_page(db: Session = Depends(get_db)):
+    jobs_count = db.query(Job).count()
+    awarded_count = db.query(Quote).filter(Quote.is_awarded == True).count()
+    master = db.query(Master).first()
+
+    categories_list = [
+        ("🔨", "拆除工程", "全室拆除、隔間打除、清運"),
+        ("🧱", "泥作工程", "地壁磚鋪設、浴室防水打底"),
+        ("⚡", "水電工程", "全室抽線、開關箱更新、抓漏"),
+        ("🎨", "油漆粉刷", "批土打磨、得利乳膠漆噴塗"),
+        ("🚿", "抓漏防水", "高壓灌注、女兒牆頂樓防水"),
+        ("🪟", "氣密門窗", "隔音氣密窗、紗窗包框施工"),
+        ("❄️", "冷氣空調", "變頻冷氣安裝移機、深度拆洗"),
+        ("🪵", "木工裝潢", "矽酸鈣平釘天花板、造型木作"),
+        ("🗄️", "系統櫃訂製", "頂天立地衣櫃、廚具鞋櫃"),
+        ("🛋️", "輕裝潢設計", "SPC石塑地板、新成屋軟裝"),
+        ("📐", "室內設計", "全室2D/3D圖面、客變規劃"),
+        ("🏚️", "老屋翻新", "基礎工程全翻新、水電重配"),
+        ("🛁", "衛浴整修", "浴缸打除、乾濕分離換新"),
+        ("🧹", "裝潢細清", "全室粉塵高溫除蟎清潔"),
+        ("📦", "精緻搬家", "大型家具保護拆裝、吊車搬運"),
+        ("🏗️", "一站式統包", "全程監工、分期驗收合約保障"),
+        ("🛠️", "點工修繕", "電子鎖安裝、五金更換水龍頭")
+    ]
+
+    cat_cards_html = ""
+    for icon, name, desc in categories_list:
+        cat_cards_html += f"""
+        <div class="cat-card">
+            <div class="cat-icon">{icon}</div>
+            <div class="cat-name">{name}</div>
+            <div class="cat-desc">{desc}</div>
+        </div>
+        """
+
+    # 取得最新公開得標案例
+    awarded_quotes = db.query(Quote).filter(Quote.is_awarded == True).order_by(Quote.id.desc()).limit(3).all()
+    showcase_html = ""
+    for aq in awarded_quotes:
+        review_text = aq.job.reviews[0].comment if aq.job.reviews else "工程依約圓滿完工，材料與進度透明！"
+        showcase_html += f"""
+        <div class="showcase-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span class="badge bg-purple">🏆 得標結案</span>
+                <span style="font-size: 13px; color: var(--text-muted);">📍 {aq.job.location}</span>
+            </div>
+            <h4 style="font-size: 16px; color: #f1f5f9; margin-bottom: 6px;">{aq.job.title}</h4>
+            <div style="font-size: 18px; font-weight: 800; color: #34d399; margin-bottom: 8px;">NT$ {aq.amount:,}</div>
+            <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin-bottom: 10px;">{aq.breakdown[:80]}...</p>
+            <div style="background: #0f172a; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #fbbf24;">
+                💬 案主評價：「{review_text[:45]}...」
+            </div>
+        </div>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>QT30 智慧修繕媒合平台 - 全台專業水電裝潢統包媒合首選</title>
+        <style>{COMMON_CSS}
+            .hero {{ text-align: center; padding: 50px 10px 40px; }}
+            .hero-badge {{ display: inline-block; background: #1e3a8a; color: #bfdbfe; font-size: 13px; padding: 4px 14px; border-radius: 9999px; margin-bottom: 16px; font-weight: 600; }}
+            .hero-title {{ font-size: 38px; font-weight: 900; line-height: 1.3; margin-bottom: 16px; background: linear-gradient(to right, #60a5fa, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+            .hero-desc {{ font-size: 16px; color: var(--text-muted); max-width: 650px; margin: 0 auto 28px; }}
+            .hero-cta {{ display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }}
+            .stats-bar {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; background: #1e293b; border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 40px 0; text-align: center; }}
+            .stat-big {{ font-size: 28px; font-weight: 900; color: #60a5fa; }}
+            .stat-lbl {{ font-size: 13px; color: var(--text-muted); margin-top: 4px; }}
+            .section-header {{ text-align: center; margin: 50px 0 30px; }}
+            .section-header h2 {{ font-size: 26px; color: #f8fafc; margin-bottom: 8px; }}
+            .section-header p {{ color: var(--text-muted); font-size: 14px; }}
+            .cat-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }}
+            .cat-card {{ background: #1e293b; border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; transition: 0.2s; cursor: pointer; }}
+            .cat-card:hover {{ transform: translateY(-3px); border-color: #60a5fa; background: #24324a; }}
+            .cat-icon {{ font-size: 28px; margin-bottom: 8px; }}
+            .cat-name {{ font-weight: bold; font-size: 15px; margin-bottom: 4px; }}
+            .cat-desc {{ font-size: 11px; color: var(--text-muted); line-height: 1.4; }}
+            .features-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }}
+            .feature-box {{ background: #1e293b; border: 1px solid var(--border); border-radius: 12px; padding: 22px; }}
+            .feature-icon {{ font-size: 24px; margin-bottom: 10px; }}
+            .feature-box h4 {{ font-size: 16px; margin-bottom: 8px; color: #93c5fd; }}
+            .feature-box p {{ font-size: 13px; color: var(--text-muted); line-height: 1.6; }}
+            .showcase-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }}
+            .showcase-card {{ background: #1e293b; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <nav>
+                <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
+                <div class="nav-links">
+                    <a href="/#categories">17大工種</a>
+                    <a href="/#guarantees">四大保障</a>
+                    <a href="/#showcase">得標案例</a>
+                    <a href="/terms">服務條款</a>
+                    <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
+                </div>
+            </nav>
+
+            <!-- Hero 主視覺 -->
+            <div class="hero">
+                <div class="hero-badge">🛡️ 國家專業證照核實・工料明細透明公開</div>
+                <h1 class="hero-title">告別裝潢裝修黑洞<br>3分鐘免費發案，精準比價安心成交</h1>
+                <p class="hero-desc">全台首創「工料明細全公開」與「歷史得標案例庫」裝潢修繕媒合平台。業主免費刊登、嚴選認證廠商快速報價，絕無現場惡意追加款項。</p>
+                <div class="hero-cta">
+                    <a href="/app" class="btn-primary" style="padding: 14px 32px; font-size: 16px;">🏠 我是業主・免費發布需求</a>
+                    <a href="/app" class="btn-secondary" style="padding: 14px 32px; font-size: 16px;">👷 我是師傅/廠商・立即搶單</a>
+                </div>
+            </div>
+
+            <!-- 數據指標 -->
+            <div class="stats-bar">
+                <div>
+                    <div class="stat-big">100%</div>
+                    <div class="stat-lbl">廠商實名與證照核實</div>
+                </div>
+                <div>
+                    <div class="stat-big">3 分鐘</div>
+                    <div class="stat-lbl">平均首筆報價抵達</div>
+                </div>
+                <div>
+                    <div class="stat-big">NT$ 1.8 億+</div>
+                    <div class="stat-lbl">累計撮合工程總額</div>
+                </div>
+            </div>
+
+            <!-- 17 大工程工種 -->
+            <div id="categories" class="section-header">
+                <h2>🛠️ 涵蓋 17 大專業裝潢與修繕工程</h2>
+                <p>不論是局部點工修繕還是全室翻新統包，皆有合格專業技師為您服務</p>
+            </div>
+            <div class="cat-grid">
+                {cat_cards_html}
+            </div>
+
+            <!-- 四大保障 -->
+            <div id="guarantees" class="section-header">
+                <h2>🛡️ 為什麼百萬業主與廠商信賴 QT30？</h2>
+                <p>用透明制度與科技機制，全面杜絕傳統裝修糾紛</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-box">
+                    <div class="feature-icon">📜</div>
+                    <h4>工料明細透明化</h4>
+                    <p>廠商報價需完整列出材料規格、工法與工期天數，杜絕含糊不清與現場坐地起價。</p>
+                </div>
+                <div class="feature-box">
+                    <div class="feature-icon">🛡️</div>
+                    <h4>雙向個資隱私防護</h4>
+                    <p>未正式選定採納前，業主聯絡電話全面遮蔽保護，杜絕電話騷擾推銷。</p>
+                </div>
+                <div class="feature-box">
+                    <div class="feature-icon">⭐</div>
+                    <h4>真實完工評價機制</h4>
+                    <p>唯有真正得標並完工驗收之業主方可撰寫評價，100% 真實可信，杜絕假水軍刷評。</p>
+                </div>
+                <div class="feature-box">
+                    <div class="feature-icon">📜</div>
+                    <h4>公開得標履歷案例庫</h4>
+                    <p>隨時查驗每位師傅過往得標金額與施工明細，市場行情清清楚楚，發案更安心。</p>
+                </div>
+            </div>
+
+            <!-- 最新得標成交案例 -->
+            <div id="showcase" class="section-header">
+                <h2>🏆 最新公開得標行情案例</h2>
+                <p>透明呈現近期真實成交價格與業主完工驗收滿意度</p>
+            </div>
+            <div class="showcase-grid">
+                {showcase_html}
+            </div>
+
+            <!-- 底部行動呼籲 -->
+            <div class="card" style="margin-top: 60px; text-align: center; background: linear-gradient(135deg, #1e293b, #1e1b4b); border-color: #4f46e5; padding: 40px 20px;">
+                <h2 style="font-size: 26px; margin-bottom: 10px;">現在就開始您的安心修繕體驗</h2>
+                <p style="color: var(--text-muted); margin-bottom: 20px;">全台 22 縣市專業廠商即時在線，免費發案、透明比價。</p>
+                <a href="/app" class="btn-primary" style="padding: 14px 36px; font-size: 16px;">進入媒合大廳發布案件 📢</a>
+            </div>
+
+            <footer>
+                <p>© 2026 QT30 專業修繕媒合平台. All Rights Reserved.</p>
+                <div style="margin-top: 10px;">
+                    <a href="/terms">服務條款</a> |
+                    <a href="/privacy">隱私權政策</a> |
+                    <a href="/disclaimer">免責聲明與交易安全</a>
+                </div>
+            </footer>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+# 媒合操作大廳 (/app)
+@app.get("/app", response_class=HTMLResponse)
+async def app_hall_page(
     filter_city: Optional[str] = Query(None),
     filter_cat: Optional[str] = Query(None),
     db: Session = Depends(get_db)
@@ -270,21 +457,21 @@ async def home_page(
             awarded_mark = '<span class="tag-awarded">🎉 業主得標採納</span>' if q.is_awarded else ''
             quotes_list_html += f"""
             <div class="quote-item {'quote-awarded' if q.is_awarded else ''}">
-                <div class="quote-header">
+                <div class="quote-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
                     <div>
-                        <a href="/master/{q.master.id}" class="master-link">👷 {q.master.name}</a> 
-                        <span class="rating-star">⭐ {q.master.rating} ({q.master.review_count}則評價)</span>
+                        <a href="/master/{q.master.id}" style="color: #93c5fd; text-decoration: none; font-weight: bold;">👷 {q.master.name}</a> 
+                        <span style="color: #fbbf24; font-weight: bold; font-size: 13px;">⭐ {q.master.rating} ({q.master.review_count}則評價)</span>
                         <span class="badge-verify">🛡️ 實名認證</span>
                         <span class="badge-license">📜 {q.master.license_type}</span>
                     </div>
                     <div class="quote-price">NT$ {q.amount:,}</div>
                 </div>
-                <div class="quote-body">
+                <div style="font-size: 13px; line-height: 1.6; color: #cbd5e1;">
                     <p><strong>🛠️ 工項工料明細：</strong>{q.breakdown}</p>
                     <p><strong>⏱️ 預估施工工期：</strong>{q.days_required}</p>
                     <div style="margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
                         <div>{awarded_mark}</div>
-                        <a href="/master/{q.master.id}" style="font-size: 12px; color: #60a5fa; text-decoration: underline;">👉 查看該廠商過往得標案例與履歷</a>
+                        <a href="/master/{q.master.id}" style="font-size: 12px; color: #60a5fa; text-decoration: underline;">👉 查看該廠商過往得標案例庫</a>
                     </div>
                 </div>
                 {'' if (j.status != 'MATCHING') else f'''
@@ -301,20 +488,20 @@ async def home_page(
             reviews_list_html += f"""
             <div class="review-item">
                 <div><strong>{r.customer_name}</strong> 給予評價：{'⭐' * r.rating}</div>
-                <p class="review-text">「{r.comment}」</p>
+                <p style="color: #c7d2fe; margin-top: 4px;">「{r.comment}」</p>
             </div>
             """
 
         phone_display = j.customer_phone if j.status == 'AWARDED' else f"{j.customer_phone[:4]}***{j.customer_phone[-3:]}（得標後解鎖完整聯絡電話）"
 
         jobs_html += f"""
-        <div class="card job-card">
-            <div class="job-header">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
                 <div>
-                    <h3 class="job-title">{j.title}</h3>
-                    <div class="job-meta">
-                        <span class="badge-loc">📍 {j.location}</span>
-                        <span class="badge-cat">🏷️ {j.category}</span>
+                    <h3 style="font-size: 18px; color: #e2e8f0;">{j.title}</h3>
+                    <div style="font-size: 13px; color: var(--text-muted); display: flex; gap: 10px; margin-top: 5px; flex-wrap: wrap;">
+                        <span style="background: #1e3a8a; color: #bfdbfe; padding: 2px 8px; border-radius: 4px;">📍 {j.location}</span>
+                        <span style="background: #3730a3; color: #c7d2fe; padding: 2px 8px; border-radius: 4px;">🏷️ {j.category}</span>
                         <span>💰 預算範圍：{j.budget_range}</span>
                         <span>🕒 {j.created_at.strftime('%Y-%m-%d %H:%M')}</span>
                     </div>
@@ -322,23 +509,23 @@ async def home_page(
                 <div>{status_badge}</div>
             </div>
             
-            <p class="job-desc">{j.description}</p>
+            <p style="background: #0f172a; padding: 12px; border-radius: 8px; line-height: 1.6; font-size: 14px; margin-bottom: 15px;">{j.description}</p>
             
-            <div class="contact-box">
+            <div style="display: flex; gap: 20px; font-size: 13px; background: #1e1b4b; border: 1px solid #3730a3; padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; color: #c7d2fe;">
                 <span>👤 案主：{j.customer_name}</span>
                 <span>📞 電話：<strong>{phone_display}</strong></span>
             </div>
 
             <!-- 師傅報價區 -->
-            <div class="section-title">💬 師傅專業報價與工項明細 ({len(j.quotes)})</div>
-            <div class="quotes-container">
-                {quotes_list_html if j.quotes else '<p class="text-muted">尚無師傅報價，搶先送出報價爭取案源！</p>'}
+            <div style="font-size: 14px; font-weight: bold; color: #93c5fd; margin-bottom: 10px;">💬 廠商專業報價與工料明細 ({len(j.quotes)})</div>
+            <div>
+                {quotes_list_html if j.quotes else '<p style="color: var(--text-muted); font-size: 13px;">尚無廠商報價，搶先送出報價爭取案源！</p>'}
             </div>
 
             <!-- 師傅快速搶單報價 Form -->
             {f'''
             <div class="quote-form-box">
-                <h4>👷 師傅快速搶單報價 (消耗 10 點數)</h4>
+                <h4>👷 廠商快速搶單報價 (消耗 10 點數)</h4>
                 <form action="/submit-quote" method="post" class="grid-form">
                     <input type="hidden" name="job_id" value="{j.id}">
                     <div class="form-group">
@@ -367,7 +554,7 @@ async def home_page(
 
             <!-- 完工評價區 -->
             {f'''
-            <div class="review-form-box">
+            <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155;">
                 <h4>⭐ 業主完工驗收評價</h4>
                 {reviews_list_html}
                 <form action="/submit-review" method="post" class="review-form">
@@ -392,19 +579,20 @@ async def home_page(
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>QT30 專業裝潢修繕媒合平台</title>
+        <title>媒合操作大廳 - QT30 專業修繕媒合平台</title>
         <style>{COMMON_CSS}</style>
     </head>
     <body>
         <div class="container">
-            <header>
-                <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/master/{master.id}" class="master-profile">
-                    <span>👷 <strong>{master.name}</strong></span>
-                    <span class="badge-verify">🛡️ ⭐ {master.rating}</span>
-                    <span class="badge-points">點數: {master.points} 點</span>
-                </a>
-            </header>
+            <nav>
+                <a href="/" class="brand">⚡ QT30 媒合操作大廳</a>
+                <div class="nav-links">
+                    <a href="/">🏠 品牌首頁</a>
+                    <a href="/master/{master.id}" class="btn-nav-primary" style="background: #1e293b; border: 1px solid var(--border);">
+                        👷 {master.name} (點數: {master.points}點)
+                    </a>
+                </div>
+            </nav>
 
             <!-- 業主發案表單 -->
             <div class="card">
@@ -554,7 +742,6 @@ async def home_page(
                 {jobs_html if jobs_html else '<p class="text-muted">目前暫無符合條件的案件，請透過上方表單刊登第一筆需求！</p>'}
             </div>
 
-            <!-- 頁尾合規連結 -->
             <footer>
                 <p>© 2026 QT30 專業修繕媒合平台. All Rights Reserved.</p>
                 <div style="margin-top: 8px;">
@@ -630,10 +817,8 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
     if not master:
         raise HTTPException(status_code=404, detail="找不到該廠商資料")
 
-    # 撈取該師傅所有得標過的案件與明細
     awarded_quotes = db.query(Quote).filter(Quote.master_id == master.id, Quote.is_awarded == True).all()
 
-    # 撈取該師傅所有收到的評價
     reviews = []
     for q in awarded_quotes:
         if q.job.reviews:
@@ -669,7 +854,6 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
                 <p><strong>⏱️ 完工工期：</strong>{aq.days_required}</p>
             </div>
 
-            <!-- 案主真實評價反饋 -->
             {review_box}
         </div>
         """
@@ -691,10 +875,13 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
     </head>
     <body>
         <div class="container">
-            <header>
+            <nav>
                 <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px;">回媒合大廳</a>
-            </header>
+                <div class="nav-links">
+                    <a href="/">🏠 品牌首頁</a>
+                    <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
+                </div>
+            </nav>
 
             <!-- 廠商主履歷卡片 -->
             <div class="card" style="border-top: 4px solid #3b82f6;">
@@ -733,7 +920,7 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
 
             <!-- 公開得標歷史與案例明細 -->
             <h2 style="margin-bottom: 15px;">📜 公開得標案例庫與工項明細 ({len(awarded_quotes)})</h2>
-            {awarded_cards_html if awarded_cards_html else '<div class="card"><p class="text-muted">尚無得標紀錄，得標後將自動收錄於此！</p></div>'}
+            {awarded_cards_html if awarded_cards_html else '<div class="card"><p style="color: var(--text-muted);">尚無得標紀錄，得標後將自動收錄於此！</p></div>'}
 
             <footer>
                 <p>© 2026 QT30 專業修繕媒合平台. All Rights Reserved.</p>
@@ -757,10 +944,13 @@ async def terms_page():
     </head>
     <body>
         <div class="container">
-            <header>
+            <nav>
                 <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px;">回首頁</a>
-            </header>
+                <div class="nav-links">
+                    <a href="/">🏠 品牌首頁</a>
+                    <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
+                </div>
+            </nav>
             <div class="card">
                 <h2>📜 QT30 平台服務條款（Terms of Service）</h2>
                 <p style="color: var(--text-muted); font-size: 13px;">最後更新日期：2026 年 8 月</p>
@@ -796,10 +986,13 @@ async def privacy_page():
     </head>
     <body>
         <div class="container">
-            <header>
+            <nav>
                 <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px;">回首頁</a>
-            </header>
+                <div class="nav-links">
+                    <a href="/">🏠 品牌首頁</a>
+                    <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
+                </div>
+            </nav>
             <div class="card">
                 <h2>🔒 QT30 隱私權保護政策（Privacy Policy）</h2>
                 <p style="color: var(--text-muted); font-size: 13px;">最後更新日期：2026 年 8 月</p>
@@ -831,10 +1024,13 @@ async def disclaimer_page():
     </head>
     <body>
         <div class="container">
-            <header>
+            <nav>
                 <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px;">回首頁</a>
-            </header>
+                <div class="nav-links">
+                    <a href="/">🏠 品牌首頁</a>
+                    <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
+                </div>
+            </nav>
             <div class="card">
                 <h2>⚠️ 免責聲明與交易安全宣導</h2>
                 <p style="color: var(--text-muted); font-size: 13px;">最後更新日期：2026 年 8 月</p>
@@ -878,7 +1074,7 @@ async def create_job(
     )
     db.add(job)
     db.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/app", status_code=303)
 
 @app.post("/submit-quote")
 async def submit_quote(
@@ -902,7 +1098,7 @@ async def submit_quote(
     )
     db.add(quote)
     db.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/app", status_code=303)
 
 @app.post("/award-quote")
 async def award_quote(quote_id: int = Form(...), db: Session = Depends(get_db)):
@@ -911,7 +1107,7 @@ async def award_quote(quote_id: int = Form(...), db: Session = Depends(get_db)):
         quote.is_awarded = True
         quote.job.status = "AWARDED"
         db.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/app", status_code=303)
 
 @app.post("/submit-review")
 async def submit_review(
@@ -934,7 +1130,6 @@ async def submit_review(
     )
     db.add(review)
 
-    # 動態重新計算師傅平均星級
     if master_id:
         master = db.query(Master).filter(Master.id == master_id).first()
         if master:
@@ -944,4 +1139,4 @@ async def submit_review(
             master.rating = round(total_ratings / master.review_count, 1)
 
     db.commit()
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/app", status_code=303)
