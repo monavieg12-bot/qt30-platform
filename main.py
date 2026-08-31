@@ -40,11 +40,10 @@ class Job(Base):
     description = Column(Text)
     customer_name = Column(String(50))
     customer_phone = Column(String(20))
-    status = Column(String(20), default="MATCHING")  # MATCHING, AWARDED, COMPLETED, DISPUTED
+    status = Column(String(20), default="MATCHING")  # MATCHING, AWARDED, COMPLETED
     created_at = Column(DateTime, default=datetime.utcnow)
     quotes = relationship("Quote", back_populates="job")
     reviews = relationship("Review", back_populates="job")
-    disputes = relationship("Dispute", back_populates="job")
 
 class Quote(Base):
     __tablename__ = "quotes"
@@ -68,18 +67,6 @@ class Review(Base):
     comment = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     job = relationship("Job", back_populates="reviews")
-
-class Dispute(Base):
-    __tablename__ = "disputes"
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"))
-    reporter_type = Column(String(20))  # 業主 / 師傅
-    reason = Column(String(100))
-    details = Column(Text)
-    contact_phone = Column(String(30))
-    status = Column(String(20), default="PENDING")  # PENDING, INVESTIGATING, RESOLVED
-    created_at = Column(DateTime, default=datetime.utcnow)
-    job = relationship("Job", back_populates="disputes")
 
 Base.metadata.create_all(bind=engine)
 
@@ -109,7 +96,6 @@ COMMON_CSS = """
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
     --success: #10b981;
-    --danger: #ef4444;
     --bg: #0f172a;
     --card-bg: #1e293b;
     --border: #334155;
@@ -132,8 +118,6 @@ input, select, textarea { width: 100%; padding: 10px; border-radius: 8px; border
 input:focus, textarea:focus, select:focus { border-color: var(--primary); }
 .btn-primary { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
 .btn-primary:hover { background: var(--primary-hover); }
-.btn-danger-outline { background: transparent; color: #f87171; border: 1px solid #ef4444; padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
-.btn-danger-outline:hover { background: #ef4444; color: white; }
 .job-card { position: relative; }
 .job-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .job-title { font-size: 18px; color: #e2e8f0; }
@@ -141,7 +125,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); }
 .badge-loc { background: #1e3a8a; color: #bfdbfe; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
 .badge-cat { background: #3730a3; color: #c7d2fe; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
 .job-desc { background: #0f172a; padding: 12px; border-radius: 8px; line-height: 1.6; font-size: 14px; margin-bottom: 15px; }
-.contact-box { display: flex; gap: 20px; font-size: 13px; background: #1e1b4b; border: 1px solid #3730a3; padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; color: #c7d2fe; justify-content: space-between; align-items: center; }
+.contact-box { display: flex; gap: 20px; font-size: 13px; background: #1e1b4b; border: 1px solid #3730a3; padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; color: #c7d2fe; }
 .section-title { font-size: 14px; font-weight: bold; color: #93c5fd; margin-bottom: 10px; }
 .quote-item { background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
 .quote-awarded { border-color: #a855f7; background: #2e1065; }
@@ -155,13 +139,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); }
 .btn-award { background: #8b5cf6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .btn-award:hover { background: #7c3aed; }
 .quote-form-box { background: #1e1e38; border: 1px dashed #4f46e5; border-radius: 8px; padding: 15px; margin-top: 15px; }
-.grid-form {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }}
+.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
 .btn-quote { background: #10b981; color: white; border: none; padding: 10px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; }
 .btn-quote:hover { background: #059669; }
 .badge { font-size: 12px; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
 .bg-green { background: #064e3b; color: #6ee7b7; }
 .bg-purple { background: #581c87; color: #d8b4fe; }
-.bg-red { background: #7f1d1d; color: #fca5a5; }
 .bg-gray { background: #334155; color: #94a3b8; }
 .review-form-box { background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155; }
 .review-item { border-left: 3px solid #fbbf24; padding-left: 10px; margin-bottom: 8px; font-size: 13px; }
@@ -172,7 +155,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); }
 .filter-bar { display: flex; gap: 10px; background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
 .agree-label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .agree-label a { color: #60a5fa; text-decoration: underline; }
-.dispute-box { background: #450a0a; border: 1px solid #b91c1c; border-radius: 6px; padding: 10px; margin-top: 10px; font-size: 13px; color: #fecaca; }
 footer { margin-top: 50px; border-top: 1px solid var(--border); padding-top: 25px; text-align: center; font-size: 13px; color: var(--text-muted); }
 footer a { color: #94a3b8; text-decoration: none; margin: 0 10px; }
 footer a:hover { color: #60a5fa; text-decoration: underline; }
@@ -198,7 +180,6 @@ async def home_page(
         status_badge = {
             "MATCHING": '<span class="badge bg-green">🟢 招募報價中</span>',
             "AWARDED": '<span class="badge bg-purple">🏆 業主已選定報價</span>',
-            "DISPUTED": '<span class="badge bg-red">⚠️ 案件爭議調解中</span>',
             "COMPLETED": '<span class="badge bg-gray">✅ 案件已完工結案</span>'
         }.get(j.status, "")
 
@@ -239,16 +220,7 @@ async def home_page(
             </div>
             """
 
-        phone_display = j.customer_phone if j.status in ['AWARDED', 'DISPUTED'] else f"{j.customer_phone[:4]}***{j.customer_phone[-3:]}（得標後解鎖完整聯絡電話）"
-
-        disputes_html = ""
-        for d in j.disputes:
-            disputes_html += f"""
-            <div class="dispute-box">
-                <strong>🚨 爭議通報紀錄 [{d.reporter_type}]：</strong>{d.reason}
-                <p style="margin-top: 4px; font-size: 12px;">詳情：{d.details} (客服已介入調處)</p>
-            </div>
-            """
+        phone_display = j.customer_phone if j.status == 'AWARDED' else f"{j.customer_phone[:4]}***{j.customer_phone[-3:]}（得標後解鎖完整聯絡電話）"
 
         jobs_html += f"""
         <div class="card job-card">
@@ -268,14 +240,9 @@ async def home_page(
             <p class="job-desc">{j.description}</p>
             
             <div class="contact-box">
-                <div>
-                    <span>👤 案主：{j.customer_name}</span> &nbsp;|&nbsp;
-                    <span>📞 電話：<strong>{phone_display}</strong></span>
-                </div>
-                <a href="/report-dispute?job_id={j.id}" class="btn-danger-outline" style="text-decoration: none;">⚠️ 申訴/通報問題</a>
+                <span>👤 案主：{j.customer_name}</span>
+                <span>📞 電話：<strong>{phone_display}</strong></span>
             </div>
-
-            {disputes_html}
 
             <!-- 師傅報價區 -->
             <div class="section-title">💬 師傅專業報價與工項明細 ({len(j.quotes)})</div>
@@ -303,7 +270,7 @@ async def home_page(
                     </div>
                     <div class="full-width">
                         <label class="agree-label">
-                            <input type="checkbox" required checked style="width: auto;"> 我已確認報價內容屬實，並同意遵循 <a href="/terms" target="_blank">平台服務條款</a> 與 <a href="/dispute-refund" target="_blank">退款機制</a>。
+                            <input type="checkbox" required checked style="width: auto;"> 我已確認報價內容屬實，並同意遵循 <a href="/terms" target="_blank">平台服務條款</a> 之報價規範。
                         </label>
                     </div>
                     <div class="full-width" style="margin-top: 8px;">
@@ -408,6 +375,7 @@ async def home_page(
                         </select>
                     </div>
 
+                    <!-- 台灣縣市與行政區二段式連動 -->
                     <div class="form-group">
                         <label>施工縣市</label>
                         <select id="city_select" name="city" onchange="onCityChange()" required>
@@ -460,7 +428,7 @@ async def home_page(
                     </div>
                     <div class="full-width">
                         <label class="agree-label">
-                            <input type="checkbox" required checked style="width: auto;"> 我已閱讀並同意 <a href="/terms" target="_blank">服務條款</a>、<a href="/privacy" target="_blank">隱私權政策</a> 與 <a href="/dispute-refund" target="_blank">爭議退款政策</a>。
+                            <input type="checkbox" required checked style="width: auto;"> 我已閱讀並同意 <a href="/terms" target="_blank">服務條款</a> 與 <a href="/privacy" target="_blank">隱私權政策</a>（送出後即授權得標廠商於施工範圍內聯繫）。
                         </label>
                     </div>
                     <div class="full-width" style="margin-top: 10px;">
@@ -508,8 +476,7 @@ async def home_page(
                 <div style="margin-top: 8px;">
                     <a href="/terms">服務條款</a> |
                     <a href="/privacy">隱私權政策</a> |
-                    <a href="/disclaimer">免責聲明</a> |
-                    <a href="/dispute-refund" style="color: #f87171; font-weight: bold;">客戶糾紛與退款政策</a>
+                    <a href="/disclaimer">免責聲明與交易安全</a>
                 </div>
             </footer>
         </div>
@@ -572,124 +539,7 @@ async def home_page(
     """
     return html
 
-# 糾紛與退款政策專頁
-@app.get("/dispute-refund", response_class=HTMLResponse)
-async def dispute_refund_page():
-    return f"""
-    <!DOCTYPE html>
-    <html lang="zh-TW">
-    <head>
-        <meta charset="UTF-8">
-        <title>客戶糾紛與退款政策 - QT30 專業修繕媒合平台</title>
-        <style>{COMMON_CSS} .card {{ line-height: 1.8; }} h3 {{ color: #f87171; margin: 18px 0 6px; }}</style>
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <a href="/" class="brand">⚡ QT30 專業裝潢修繕媒合</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px; text-decoration: none;">回首頁</a>
-            </header>
-            <div class="card">
-                <h2>⚖️ QT30 客戶糾紛處理與點數退款政策</h2>
-                <p style="color: var(--text-muted); font-size: 13px;">最後更新日期：2026 年 8 月</p>
-                <hr style="border: 0; border-top: 1px solid var(--border); margin: 15px 0;">
-
-                <h3>一、工程品質與承攬糾紛處理 SOP</h3>
-                <p>1. <strong>自主協議</strong>：業主與得標師傅發生施工瑕疵、工期延宕爭議時，應以平台留存之「報價明細與工期」為依據，於 7 日內先進行雙方協商。<br>
-                2. <strong>平台介入調解</strong>：若協商無果，雙方可透過案件專屬「⚠️ 申訴/通報問題」按鈕通報客服，平台將暫停該廠商之接案資格，並調閱雙方通聯紀錄協助促成和解。<br>
-                3. <strong>法定調解途徑</strong>：涉及重大工程損害或工程款拒付者，平台將提供雙方完整媒合存證紀錄，協助向各縣市政府消費者服務中心（消保官）或各區公所調解委員會聲請調解。</p>
-
-                <h3>二、師傅儲值點數退款機制（消保規範）</h3>
-                <p>1. <strong>7 日未拆封全額退款</strong>：師傅儲值點數後 7 日內，若完全未進行任何報價消耗，得向客服申請全額退款。<br>
-                2. <strong>已部分使用退款</strong>：依比例結算剩餘點數金額，扣除 3% 銀行金流手續費及 NT$100 行政作業費後退還指定帳戶。</p>
-
-                <h3>三、無效發案「100% 補回點數」保證</h3>
-                <p>若師傅送出報價並扣除 10 點後，遇有下列情事，得申請全額補還點數：<br>
-                • 業主提供之電話為空號、假號碼或非本人發案。<br>
-                • 業主於發案後 2 小時內已私下找他人完工或表示誤發。<br>
-                經客服確認屬實後，系統於 24 小時內自動補回 10 點至師傅帳戶。</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-# 申訴與回報頁面
-@app.get("/report-dispute", response_class=HTMLResponse)
-async def report_dispute_ui(job_id: int, db: Session = Depends(get_db)):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="找不到該案件")
-    return f"""
-    <!DOCTYPE html>
-    <html lang="zh-TW">
-    <head>
-        <meta charset="UTF-8">
-        <title>案件爭議通報 / 申訴 - QT30</title>
-        <style>{COMMON_CSS}</style>
-    </head>
-    <body>
-        <div class="container" style="max-width: 600px;">
-            <header>
-                <a href="/" class="brand">⚡ QT30 爭議通報中心</a>
-                <a href="/" class="btn-primary" style="padding: 6px 14px; font-size: 13px; text-decoration: none;">取消返回</a>
-            </header>
-            <div class="card">
-                <h3 style="color: #f87171;">🚨 案件爭議通報 / 點數返還申請</h3>
-                <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">針對案件：<strong>{job.title}</strong> (ID: #{job.id})</p>
-                
-                <form action="/submit-dispute" method="post" style="margin-top: 15px;">
-                    <input type="hidden" name="job_id" value="{job.id}">
-                    <div style="margin-bottom: 12px;">
-                        <label>您的身分</label>
-                        <select name="reporter_type" required>
-                            <option value="業主申訴">我是業主（回報施工品質瑕疵 / 師傅失聯 / 惡意追加）</option>
-                            <option value="師傅申訴">我是師傅（回報業主假號碼 / 空號 / 申請返還扣點）</option>
-                        </select>
-                    </div>
-                    <div style="margin-bottom: 12px;">
-                        <label>申訴主旨 / 爭議事由</label>
-                        <input type="text" name="reason" placeholder="例如：得標師傅未依約進場施工 / 業主電話為空號" required>
-                    </div>
-                    <div style="margin-bottom: 12px;">
-                        <label>聯絡電話 (供客服聯繫調解)</label>
-                        <input type="tel" name="contact_phone" placeholder="例如：0912-345-678" required>
-                    </div>
-                    <div style="margin-bottom: 15px;">
-                        <label>具體情況詳細說明</label>
-                        <textarea name="details" rows="4" placeholder="請詳細說明事發經過、爭議金額、約定工期等細節..." required></textarea>
-                    </div>
-                    <button type="submit" class="btn-primary" style="width: 100%; background: #dc2626;">🚨 送出爭議通報 (客服於 24H 內介入)</button>
-                </form>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-@app.post("/submit-dispute")
-async def submit_dispute(
-    job_id: int = Form(...),
-    reporter_type: str = Form(...),
-    reason: str = Form(...),
-    contact_phone: str = Form(...),
-    details: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    dispute = Dispute(
-        job_id=job_id,
-        reporter_type=reporter_type,
-        reason=reason,
-        contact_phone=contact_phone,
-        details=details
-    )
-    job = db.query(Job).filter(Job.id == job_id).first()
-    if job:
-        job.status = "DISPUTED"
-    db.add(dispute)
-    db.commit()
-    return RedirectResponse(url="/", status_code=303)
-
+# 法律條款獨立頁面
 @app.get("/terms", response_class=HTMLResponse)
 async def terms_page():
     return f"""
@@ -719,7 +569,7 @@ async def terms_page():
                 2. 師傅送出之報價、工期與材料明細應具專業信實，得標後應依誠信原則與業主接洽簽約施工。</p>
 
                 <h3>第三條：點數儲值與扣點機制</h3>
-                <p>師傅參與報價消耗之平台點數，屬資訊媒合服務費用。一旦點數扣除並送出報價，除符合退款政策之無效案件外，不得任意要求返還點數。</p>
+                <p>師傅參與報價消耗之平台點數，屬資訊媒合服務費用。一旦點數扣除並送出報價，除系統不可抗力錯誤外，不得要求返還點數。</p>
 
                 <h3>第四條：爭議處理與準據法</h3>
                 <p>本服務條款之解釋與適用，悉依中華民國法律為準據法。因工程承攬所生之一切履約糾紛，由業主與施工廠商自行依法協商解決。</p>
