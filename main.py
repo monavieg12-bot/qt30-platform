@@ -10,13 +10,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./qt30_platform.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# 加入容錯連線機制：連不上 PostgreSQL 時自動降級回退到 SQLite，確保服務永不崩潰
 try:
     if "sqlite" in DATABASE_URL:
         engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     else:
         engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 5})
-    # 測試連線
     with engine.connect() as conn:
         pass
 except Exception as e:
@@ -213,6 +211,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); }
 .badge-verify { background: #065f46; color: #6ee7b7; font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .badge-license { background: #1e3a8a; color: #93c5fd; font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .badge-points { background: #d97706; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; }
+.badge-hot { background: #991b1b; color: #fecaca; font-size: 12px; padding: 4px 10px; border-radius: 6px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
 .badge { font-size: 12px; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
 .bg-green { background: #064e3b; color: #6ee7b7; }
 .bg-purple { background: #581c87; color: #d8b4fe; }
@@ -240,6 +239,7 @@ footer a { color: #94a3b8; text-decoration: none; margin: 0 10px; }
 footer a:hover { color: #60a5fa; text-decoration: underline; }
 """
 
+# 品牌官方首頁 (Landing Page)
 @app.get("/", response_class=HTMLResponse)
 async def landing_page(db: Session = Depends(get_db)):
     jobs_count = db.query(Job).count()
@@ -345,7 +345,7 @@ async def landing_page(db: Session = Depends(get_db)):
             <div class="hero">
                 <div class="hero-badge">🛡️ 國家專業證照核實・工料明細透明公開</div>
                 <h1 class="hero-title">告別裝潢裝修黑洞<br>3分鐘免費發案，精準比價安心成交</h1>
-                <p class="hero-desc">全台首創「工料明細全公開」與「歷史得標案例庫」裝潢修繕媒合平台。業主免費刊登、嚴選認證廠商快速報價，絕無現場惡意追加款項。</p>
+                <p class="hero-desc">全台首創「工料明細全公開」與「多廠商無限精準比價」裝潢修繕媒合平台。業主免費刊登、嚴選認證廠商快速報價，絕無現場惡意追加款項。</p>
                 <div class="hero-cta">
                     <a href="/app" class="btn-primary" style="padding: 14px 32px; font-size: 16px;">🏠 我是業主・免費發布需求</a>
                     <a href="/app" class="btn-secondary" style="padding: 14px 32px; font-size: 16px;">👷 我是師傅/廠商・立即搶單</a>
@@ -430,6 +430,7 @@ async def landing_page(db: Session = Depends(get_db)):
     """
     return html
 
+# 媒合操作大廳 (/app)
 @app.get("/app", response_class=HTMLResponse)
 async def app_hall_page(
     filter_city: Optional[str] = Query(None),
@@ -448,10 +449,13 @@ async def app_hall_page(
     jobs_html = ""
     for j in jobs:
         status_badge = {
-            "MATCHING": '<span class="badge bg-green">🟢 招募報價中</span>',
-            "AWARDED": '<span class="badge bg-purple">🏆 業主已選定報價</span>',
+            "MATCHING": '<span class="badge bg-green">🟢 招募比價中 (無上限搶單)</span>',
+            "AWARDED": '<span class="badge bg-purple">🏆 業主已選定得標廠商</span>',
             "COMPLETED": '<span class="badge bg-gray">✅ 案件已完工結案</span>'
         }.get(j.status, "")
+
+        quotes_count = len(j.quotes)
+        hot_badge = f'<span class="badge-hot">🔥 競爭熱門 ({quotes_count} 家廠商已比價)</span>' if quotes_count >= 3 else ''
 
         quotes_list_html = ""
         for q in j.quotes:
@@ -478,7 +482,7 @@ async def app_hall_page(
                 {'' if (j.status != 'MATCHING') else f'''
                 <form action="/award-quote" method="post" style="margin-top: 10px;">
                     <input type="hidden" name="quote_id" value="{q.id}">
-                    <button type="submit" class="btn-award">🎯 採納此師傅報價</button>
+                    <button type="submit" class="btn-award">🎯 採納此廠商報價 (直接聯繫)</button>
                 </form>
                 '''}
             </div>
@@ -497,17 +501,20 @@ async def app_hall_page(
 
         jobs_html += f"""
         <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
                 <div>
                     <h3 style="font-size: 18px; color: #e2e8f0;">{j.title}</h3>
-                    <div style="font-size: 13px; color: var(--text-muted); display: flex; gap: 10px; margin-top: 5px; flex-wrap: wrap;">
+                    <div style="font-size: 13px; color: var(--text-muted); display: flex; gap: 10px; margin-top: 5px; flex-wrap: wrap; align-items: center;">
                         <span style="background: #1e3a8a; color: #bfdbfe; padding: 2px 8px; border-radius: 4px;">📍 {j.location}</span>
                         <span style="background: #3730a3; color: #c7d2fe; padding: 2px 8px; border-radius: 4px;">🏷️ {j.category}</span>
                         <span>💰 預算範圍：{j.budget_range}</span>
                         <span>🕒 {j.created_at.strftime('%Y-%m-%d %H:%M')}</span>
                     </div>
                 </div>
-                <div>{status_badge}</div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    {hot_badge}
+                    {status_badge}
+                </div>
             </div>
             
             <p style="background: #0f172a; padding: 12px; border-radius: 8px; line-height: 1.6; font-size: 14px; margin-bottom: 15px;">{j.description}</p>
@@ -517,14 +524,18 @@ async def app_hall_page(
                 <span>📞 電話：<strong>{phone_display}</strong></span>
             </div>
 
-            <div style="font-size: 14px; font-weight: bold; color: #93c5fd; margin-bottom: 10px;">💬 廠商專業報價與工料明細 ({len(j.quotes)})</div>
+            <!-- 師傅報價區 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                <div style="font-size: 14px; font-weight: bold; color: #93c5fd;">💬 廠商專業比價清單 (已累積 {len(j.quotes)} 家報價・開放自由比價)</div>
+            </div>
             <div>
-                {quotes_list_html if j.quotes else '<p style="color: var(--text-muted); font-size: 13px;">尚無廠商報價，搶先送出報價爭取案源！</p>'}
+                {quotes_list_html if j.quotes else '<p style="color: var(--text-muted); font-size: 13px;">尚無廠商報價，搶先送出第一筆報價爭取案源！</p>'}
             </div>
 
+            <!-- 師傅快速搶單報價 Form -->
             {f'''
             <div class="quote-form-box">
-                <h4>👷 廠商快速搶單報價 (消耗 10 點數)</h4>
+                <h4>👷 廠商快速搶單報價 (無家數限制・消耗 10 點)</h4>
                 <form action="/submit-quote" method="post" class="grid-form">
                     <input type="hidden" name="job_id" value="{j.id}">
                     <div class="form-group">
@@ -551,6 +562,7 @@ async def app_hall_page(
             </div>
             ''' if j.status == 'MATCHING' else ''}
 
+            <!-- 完工評價區 -->
             {f'''
             <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155;">
                 <h4>⭐ 業主完工驗收評價</h4>
@@ -700,11 +712,12 @@ async def app_hall_page(
                         </label>
                     </div>
                     <div class="full-width" style="margin-top: 10px;">
-                        <button type="submit" class="btn-primary" style="width: 100%;">📢 免費發布裝潢/修繕需求</button>
+                        <button type="submit" class="btn-primary" style="width: 100%;">📢 免費發布裝潢/修繕需求 (開放廠商比價)</button>
                     </div>
                 </form>
             </div>
 
+            <!-- 師傅篩選與案件列表 -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
                 <h2>📋 最新發布案件 ({len(jobs)})</h2>
                 <form method="get" class="filter-bar" style="margin-bottom: 0;">
