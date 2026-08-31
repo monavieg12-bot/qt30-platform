@@ -1,0 +1,25 @@
+# 使用輕量級 Python 3.11 映像檔
+FROM python:3.11-slim
+
+# 設定工作目錄
+WORKDIR /app
+
+# 設定環境變數：防止 Python 產生 .pyc 暫存檔，並讓終端日誌即時輸出
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 安裝依賴套件
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 複製所有專案程式碼進容器
+COPY . .
+
+# 確保圖片上傳目錄存在
+RUN mkdir -p uploads
+
+# 對外開放 8000 埠
+EXPOSE 8000
+
+# 啟動 Uvicorn 伺服器
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
