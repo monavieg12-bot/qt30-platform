@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import shutil
 import os
+import requests
 
 from database import Base, engine, SessionLocal, User, Case, LeadUnlock, init_db
 
@@ -15,6 +16,47 @@ if not os.path.exists("uploads"):
     os.makedirs("uploads")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
+# ==========================================
+# 機器人即時推播設定參數 (可隨時替換成你的專屬 Token)
+# ==========================================
+TELEGRAM_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "") # 例如: "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID", "")     # 例如: "-1001234567890" 或個人 Chat ID
+PLATFORM_DOMAIN = os.getenv("PLATFORM_DOMAIN", "https://qt30-platform.onrender.com")
+
+def send_new_lead_notification(case: Case):
+    """當有新名單發布時，自動發送推播通知給師傅群組"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print(f"[推播略過] 尚未配置 Telegram 機器人 Token，新案件: #{case.id} {case.title}")
+        return
+
+    message = (
+        f"🚨 【QT30 新案源搶單通知】\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📌 需求項目：{case.title}\n"
+        f"🏷️ 服務分類：{case.category}\n"
+        f"📍 地區位置：{case.district}\n"
+        f"💰 預估預算：NT$ {case.budget:,}\n"
+        f"⚡ 限量名額：{case.max_unlocks} 位師傅\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"👉 點擊立即前往搶單：\n"
+        f"{PLATFORM_DOMAIN}"
+    )
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code == 200:
+            print(f"[推播成功] 案件 #{case.id} 已通知師傅群組")
+        else:
+            print(f"[推播失敗] 代碼: {response.status_code}, 內容: {response.text}")
+    except Exception as e:
+        print(f"[推播例外錯誤] {str(e)}")
+
 def get_db():
     db = SessionLocal()
     try:
@@ -22,7 +64,6 @@ def get_db():
     finally:
         db.close()
 
-# 確保預設有一位測試師傅
 @app.on_event("startup")
 def setup_default_user():
     db = SessionLocal()
@@ -44,7 +85,6 @@ def unlock_case(case_id: int, db: Session = Depends(get_db)):
     if not expert:
         raise HTTPException(status_code=404, detail="找不到專家帳號")
 
-    # 檢查是否已經解鎖過
     existing = db.query(LeadUnlock).filter(
         LeadUnlock.case_id == case_id,
         LeadUnlock.expert_id == expert.id
@@ -56,15 +96,12 @@ def unlock_case(case_id: int, db: Session = Depends(get_db)):
             "contact": {"name": case.client_name, "phone": case.client_phone, "line": case.client_line or "無"}
         }
 
-    # 檢查搶單名額是否已滿
     if case.current_unlocks >= case.max_unlocks:
         raise HTTPException(status_code=400, detail="名額已搶完（上限 3 位）！")
 
-    # 檢查點數餘額
     if expert.points < case.unlock_fee:
         raise HTTPException(status_code=400, detail=f"點數不足！解鎖需 {case.unlock_fee} 點，目前餘額 {expert.points} 點")
 
-    # 執行扣點與名額累加
     expert.points -= case.unlock_fee
     case.current_unlocks += 1
     new_unlock = LeadUnlock(case_id=case.id, expert_id=expert.id)
@@ -77,7 +114,7 @@ def unlock_case(case_id: int, db: Session = Depends(get_db)):
         "contact": {"name": case.client_name, "phone": case.client_phone, "line": case.client_line or "無"}
     }
 
-# 發布需求 API
+# 發布需求 API (包含即時通知發送)
 @app.post("/api/cases")
 async def create_case(
     title: str = Form(...),
@@ -113,9 +150,14 @@ async def create_case(
     )
     db.add(new_case)
     db.commit()
-    return {"status": "success", "message": "發案成功！案件已進入大廳供師傅搶單。"}
+    db.refresh(new_case)
 
-# 取得案件清單（聯絡資訊自動遮罩保護）
+    # 觸發即時推播
+    send_new_lead_notification(new_case)
+
+    return {"status": "success", "message": "發案成功！案件已發布並推播給師傅。"}
+
+# 取得案件清單
 @app.get("/api/cases")
 def list_cases(db: Session = Depends(get_db)):
     cases = db.query(Case).order_by(Case.id.desc()).all()
