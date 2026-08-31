@@ -3,12 +3,11 @@ import time
 import urllib.parse
 import hashlib
 import requests
-from fastapi import FastAPI, HTTPException, Request, Form
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 app = FastAPI(title="QT30 派工與金流平台")
@@ -21,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----------------- LINE 推播設定 -----------------
+# LINE 金鑰
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
     "LINE_CHANNEL_ACCESS_TOKEN",
     "Fqylo2CR5nbZX27rp8sg5F7l7Ik4UrvVTPEAxN9l+gpNd2C7V2LBY6NIEakUsBXvZGJ2yq/bzpv0lXLsMrv2C5c6rrG926TAkHnSZkIEZIS1uywU6XJ4waIONGyQxEVq8ff75muOQ4S9wF1mztzz8QdB04t89/1O/w1cDnyilFU="
@@ -45,7 +44,7 @@ def send_line_notification(message_text: str):
     except Exception as e:
         print(f"LINE 推播發送失敗: {e}")
 
-# ----------------- 綠界 ECPay 金流設定 (官方測試環境) -----------------
+# 綠界官方測試金流設定
 ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "2000132")
 ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "5294y06JbISpM5x9")
 ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "v77hoKGq4kWxNNIS")
@@ -53,7 +52,6 @@ ECPAY_PAYMENT_URL = "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
 
 def ecpay_url_encode(s: str) -> str:
     encoded = urllib.parse.quote_plus(s)
-    # 綠界特定字元置換規則
     replacements = {
         '%2D': '-', '%5F': '_', '%2E': '.', '%21': '!', '%2A': '*',
         '%28': '(', '%29': ')', '%20': '+'
@@ -63,25 +61,18 @@ def ecpay_url_encode(s: str) -> str:
     return encoded
 
 def generate_check_mac_value(params: dict, hash_key: str, hash_iv: str) -> str:
-    # 1. 依照鍵值 A-Z 排序
     sorted_params = sorted(params.items(), key=lambda x: x[0])
-    # 2. 組合字串
     raw_str = f"HashKey={hash_key}&" + "&".join([f"{k}={v}" for k, v in sorted_params]) + f"&HashIV={hash_iv}"
-    # 3. URL Encode
-    encoded_str = ecpay_url_encode(raw_str)
-    # 4. 轉小寫
-    lower_str = encoded_str.lower()
-    # 5. SHA256 加密並轉大寫
-    return hashlib.sha256(lower_str.encode('utf-8')).hexdigest().upper()
+    encoded_str = ecpay_url_encode(raw_str).lower()
+    return hashlib.sha256(encoded_str.encode('utf-8')).hexdigest().upper()
 
-# ----------------- 資料庫與模型 -----------------
 class CaseCreate(BaseModel):
     clientName: Optional[str] = "未填寫"
     clientPhone: Optional[str] = "未填寫"
     address: Optional[str] = "未填寫"
     item: Optional[str] = "一般修繕"
     description: Optional[str] = "無詳細描述"
-    depositAmount: Optional[int] = 500  # 預設修繕定金 500 元
+    depositAmount: Optional[int] = 500
 
 class CaseUpdate(BaseModel):
     status: Optional[str] = None
@@ -90,7 +81,6 @@ class CaseUpdate(BaseModel):
 
 cases_db = []
 
-# 建立案件 API（同時發送 LINE 通知）
 @app.post("/api/cases")
 def create_case(data: CaseCreate):
     timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -102,13 +92,12 @@ def create_case(data: CaseCreate):
         "tradeNo": trade_no,
         "status": "待派工",
         "paymentStatus": "未付款",
-        "depositAmount": data.depositAmount,
+        "depositAmount": data.depositAmount or 500,
         "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         **data.dict()
     }
     cases_db.insert(0, new_case)
 
-    # 觸發 LINE 推播
     msg = (
         f"🔔 【QT30 新案件通報】\n"
         f"------------------------\n"
@@ -120,12 +109,11 @@ def create_case(data: CaseCreate):
         f"💰 預估定金：NT$ {new_case['depositAmount']}\n"
         f"📝 案件描述：{new_case['description']}\n"
         f"------------------------\n"
-        f"⚡ 系統已為客戶生成綠界測試付款訂單！"
+        f"⚡ 系統已建立訂單，待客戶付款/派工！"
     )
     send_line_notification(msg)
     return {"success": True, "case": new_case}
 
-# 綠界付款跳轉產生器
 @app.get("/api/pay/{case_id}", response_class=HTMLResponse)
 def get_payment_page(case_id: str, request: Request):
     target = next((c for c in cases_db if c["id"] == case_id), None)
@@ -152,16 +140,15 @@ def get_payment_page(case_id: str, request: Request):
     check_mac = generate_check_mac_value(params, ECPAY_HASH_KEY, ECPAY_HASH_IV)
     params["CheckMacValue"] = check_mac
 
-    # 自動提交表單導向綠界收銀台
     inputs_html = "".join([f'<input type="hidden" name="{k}" value="{v}" />' for k, v in params.items()])
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head><title>前往綠界金流支付...</title><meta charset="utf-8"></head>
-    <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;">
-        <div style="text-align:center;">
-            <h2>正在跳轉至綠界金流安全收銀台...</h2>
-            <p>案件編號：{target['id']} | 金額：NT$ {target['depositAmount']}</p>
+    <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f8fafc;">
+        <div style="text-align:center;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <h2 style="color:#0284c7;">正在安全跳轉至綠界金流收銀台...</h2>
+            <p>案件編號：<b>{target['id']}</b> | 定金金額：<b>NT$ {target['depositAmount']}</b></p>
             <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
                 {inputs_html}
             </form>
@@ -171,7 +158,6 @@ def get_payment_page(case_id: str, request: Request):
     """
     return HTMLResponse(content=html_content)
 
-# 綠界付款成功回傳 Webhook
 @app.post("/api/ecpay/callback")
 async def ecpay_callback(request: Request):
     form_data = await request.form()
@@ -179,11 +165,10 @@ async def ecpay_callback(request: Request):
     trade_no = data.get("MerchantTradeNo")
     rtn_code = data.get("RtnCode")
 
-    if rtn_code == "1":  # 付款成功
+    if rtn_code == "1":
         for c in cases_db:
             if c["tradeNo"] == trade_no:
                 c["paymentStatus"] = "已付款"
-                # LINE 支付成功通知
                 msg = (
                     f"💳 【QT30 案件已付款通知】\n"
                     f"------------------------\n"
@@ -198,43 +183,122 @@ async def ecpay_callback(request: Request):
                 break
     return "1|OK"
 
-# 案件列表 API
 @app.get("/api/cases")
 def get_cases():
     return {"success": True, "cases": cases_db}
 
-# 更新案件狀態
-@app.patch("/api/cases/{case_id}")
-def update_case(case_id: str, data: CaseUpdate):
-    for c in cases_db:
-        if c["id"] == case_id:
-            if data.status is not None:
-                c["status"] = data.status
-            if data.technician is not None:
-                c["technician"] = data.technician
-            if data.paymentStatus is not None:
-                c["paymentStatus"] = data.paymentStatus
-            return {"success": True, "case": c}
-    raise HTTPException(status_code=404, detail="找不到案件")
+# --- 內建客戶發案頁面 (/app) ---
+@app.get("/app", response_class=HTMLResponse)
+def serve_app_page():
+    return """
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>QT30 房屋修繕發案平台</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-100 min-h-screen p-4 sm:p-8">
+      <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-blue-600 p-6 text-white text-center">
+          <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
+          <p class="text-blue-100 text-sm mt-1">填單立即通知師傅，並支援線上支付定金</p>
+        </div>
+        
+        <form id="caseForm" class="p-6 space-y-4">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">聯絡姓名</label>
+            <input type="text" id="clientName" required placeholder="例如：王先生" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">聯絡電話</label>
+            <input type="tel" id="clientPhone" required placeholder="例如：0912345678" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">修繕地址</label>
+            <input type="text" id="address" required placeholder="例如：新北市淡水區..." class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">修繕項目</label>
+            <select id="item" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+              <option value="水電維修">水電維修 (水龍頭、漏水、開關)</option>
+              <option value="泥作防水">泥作防水 (抓漏、磁磚)</option>
+              <option value="冷氣空調">冷氣空調 (清洗、保養、移機)</option>
+              <option value="油漆粉刷">油漆粉刷 (室內油漆)</option>
+              <option value="裝潢木作">裝潢木作</option>
+              <option value="其他綜合修繕">其他綜合修繕</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">預約定金 (NT$)</label>
+            <input type="number" id="depositAmount" value="500" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">狀況描述</label>
+            <textarea id="description" rows="3" placeholder="請簡述損壞情況..." class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+          </div>
 
-# 靜態檔案路由
-if os.path.exists("public"):
-    app.mount("/static", StaticFiles(directory="public"), name="static")
+          <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg shadow-md transition duration-200">
+            送出預約報修
+          </button>
+        </form>
 
-@app.get("/app")
-def serve_app():
-    if os.path.exists("public/app.html"):
-        return FileResponse("public/app.html")
-    return {"message": "QT30 發案系統運作中"}
+        <div id="resultModal" class="hidden p-6 bg-green-50 border-t border-green-200 text-center">
+          <h3 class="text-lg font-bold text-green-800">✅ 報修單已成功送出！</h3>
+          <p class="text-sm text-gray-600 mt-1">案件編號：<span id="resCaseId" class="font-bold text-blue-600"></span></p>
+          <p class="text-xs text-gray-500 mt-1">師傅已收到 LINE 即時推播通知</p>
+          <div class="mt-4">
+            <a id="payBtn" href="#" class="inline-block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow">
+              💳 前往綠界刷卡支付定金 (NT$ <span id="resAmount">500</span>)
+            </a>
+          </div>
+        </div>
+      </div>
 
-@app.get("/admin")
-def serve_admin():
-    if os.path.exists("public/admin.html"):
-        return FileResponse("public/admin.html")
-    return {"message": "QT30 派工後台運作中"}
+      <script>
+        document.getElementById('caseForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = document.getElementById('submitBtn');
+          btn.disabled = true;
+          btn.innerText = '正在送出...';
 
-@app.get("/")
-def serve_index():
-    if os.path.exists("public/index.html"):
-        return FileResponse("public/index.html")
-    return {"message": "QT30 派工平台金流與 LINE 系統已連線！"}
+          const data = {
+            clientName: document.getElementById('clientName').value,
+            clientPhone: document.getElementById('clientPhone').value,
+            address: document.getElementById('address').value,
+            item: document.getElementById('item').value,
+            depositAmount: parseInt(document.getElementById('depositAmount').value) || 500,
+            description: document.getElementById('description').value
+          };
+
+          try {
+            const res = await fetch('/api/cases', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+              document.getElementById('caseForm').classList.add('hidden');
+              document.getElementById('resultModal').classList.remove('hidden');
+              document.getElementById('resCaseId').innerText = result.case.id;
+              document.getElementById('resAmount').innerText = result.case.depositAmount;
+              document.getElementById('payBtn').href = '/api/pay/' + result.case.id;
+            }
+          } catch(err) {
+            alert('送出失敗，請稍後再試');
+            btn.disabled = false;
+            btn.innerText = '送出預約報修';
+          }
+        });
+      </script>
+    </body>
+    </html>
+    """
+
+@app.get("/", response_class=HTMLResponse)
+def serve_home():
+    return """
+    <script>window.location.href = '/app';</script>
+    """
