@@ -36,9 +36,9 @@ class Case(Base):
     budget = Column(Integer, nullable=False)
     description = Column(Text, nullable=True)
     image_url = Column(String(255), nullable=True)
-    status = Column(String(20), default="OPEN") # OPEN: 競標中, CLOSED: 已選定得標師傅
+    status = Column(String(20), default="OPEN")
     
-    # 案主聯絡資訊
+    # 案主私密聯絡資訊
     client_name = Column(String(50), nullable=False)
     client_phone = Column(String(20), nullable=False)
     client_line = Column(String(50), nullable=True)
@@ -63,11 +63,11 @@ class Bid(Base):
     case_id = Column(Integer, ForeignKey("cases.id"))
     expert_id = Column(Integer, ForeignKey("users.id"))
     bid_amount = Column(Integer, nullable=False)
-    materials = Column(String(200), nullable=True)     # 材料規格
-    work_duration = Column(String(50), nullable=True)  # 施工工期
-    warranty_period = Column(String(50), nullable=True)# 保固年限
-    work_detail = Column(Text, nullable=False)         # 工法明細
-    is_selected = Column(Boolean, default=False)       # 業主是否選用此報價
+    materials = Column(String(200), nullable=True)
+    work_duration = Column(String(50), nullable=True)
+    warranty_period = Column(String(50), nullable=True)
+    work_detail = Column(Text, nullable=False)
+    is_selected = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     case = relationship("Case", back_populates="bids")
     expert = relationship("User", back_populates="bids")
@@ -232,7 +232,6 @@ def submit_bid(
     if not expert:
         raise HTTPException(status_code=404, detail="專家帳號異常")
 
-    # 權限驗證：必須先解鎖現勘權限才能報價
     is_unlocked = db.query(LeadUnlock).filter(
         LeadUnlock.case_id == case_id, LeadUnlock.expert_id == expert.id
     ).first()
@@ -255,7 +254,6 @@ def submit_bid(
     db.commit()
     return {"status": "success", "message": "現勘制式化報價已成功公開！"}
 
-# 業主選定得標師傅 API
 @app.post("/api/bids/{bid_id}/select")
 def select_winner_bid(bid_id: int, db: Session = Depends(get_db)):
     bid = db.query(Bid).filter(Bid.id == bid_id).first()
@@ -268,7 +266,6 @@ def select_winner_bid(bid_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": f"恭喜！已成功選定【{bid.expert.username}】承作本案！"}
 
-# 師傅線上儲值點數 API (模擬綠界金流回傳)
 @app.post("/api/user/recharge")
 def recharge_points(amount: int = Form(...), db: Session = Depends(get_db)):
     expert = db.query(User).filter(User.username == "金牌水電行-阿銘").first()
@@ -279,90 +276,10 @@ def recharge_points(amount: int = Form(...), db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": f"儲值成功！已增加 {amount} 點", "points": expert.points}
 
-# ================= 4. SEO 獨立案件頁面 =================
-@app.get("/case/{case_id}", response_class=HTMLResponse)
-def case_detail_seo_page(case_id: int, db: Session = Depends(get_db)):
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return HTMLResponse("<h1>404 查無此案件</h1>", status_code=404)
-
-    bids_html = ""
-    for b in case.bids:
-        bids_html += f"""
-        <div class="p-3 bg-white border {'border-emerald-500 ring-2 ring-emerald-400' if b.is_selected else 'border-slate-200'} rounded-xl shadow-sm mb-2">
-            <div class="flex justify-between font-bold text-sm">
-                <span class="text-blue-600">🛠️ {b.expert.username if b.expert else "專業師傅"} { '🏆 [業主已選用得標]' if b.is_selected else '' }</span>
-                <span class="text-red-600">報價：NT$ {b.bid_amount:,}</span>
-            </div>
-            <div class="text-xs text-slate-500 mt-1">🧱 材料規格：{b.materials or 'CNS標準'} ｜ ⏱️ 工期：{b.work_duration or '面議'} ｜ 🛡️ 保固：{b.warranty_period or '保固依約'}</div>
-            <p class="text-xs text-slate-700 mt-2 bg-slate-50 p-2 rounded whitespace-pre-line">{b.work_detail}</p>
-        </div>
-        """
-    if not bids_html:
-        bids_html = "<div class='text-sm text-slate-400'>目前尚無公開報價，開放全台師傅預約現勘競標中。</div>"
-
-    schema_data = {
-        "@context": "https://schema.org",
-        "@type": "Service",
-        "name": f"{case.district} {case.category} - {case.title}",
-        "description": case.description or f"{case.district} 房屋修繕 {case.title}，公開行情預算約 NT$ {case.budget:,}",
-        "areaServed": case.district,
-        "offers": {
-            "@type": "AggregateOffer",
-            "priceCurrency": "TWD",
-            "lowPrice": min([b.bid_amount for b in case.bids]) if case.bids else case.budget,
-            "highPrice": max([b.bid_amount for b in case.bids]) if case.bids else case.budget,
-            "offerCount": len(case.bids)
-        }
-    }
-
-    return f"""
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{case.district} {case.category} 報價行情 - {case.title} | QT30社區修繕達人網</title>
-    <meta name="description" content="{case.district}{case.category}即時公開報價行情。預算 NT$ {case.budget:,}，已有 {len(case.bids)} 位師傅公開工法與材料明細比價。">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="application/ld+json">
-    {json.dumps(schema_data, ensure_ascii=False)}
-    </script>
-</head>
-<body class="bg-slate-100 min-h-screen p-4 font-sans">
-    <div class="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow border border-slate-200">
-        <a href="/" class="text-xs text-blue-600 hover:underline font-semibold">← 返回大廳</a>
-        <div class="mt-3 flex items-center gap-2">
-            <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded font-bold">{case.category}</span>
-            <span class="text-xs text-slate-500">📍 {case.district}</span>
-            <span class="text-xs font-bold {'text-emerald-700 bg-emerald-100' if case.status=='CLOSED' else 'text-blue-700 bg-blue-50'} px-2 py-0.5 rounded">
-                {'🎉 案件已結標' if case.status=='CLOSED' else '⚡ 開放現勘競標中'}
-            </span>
-        </div>
-        <h1 class="text-xl font-black text-slate-900 mt-2">{case.title}</h1>
-        <p class="text-sm text-slate-600 mt-2 bg-slate-50 p-3 rounded-lg leading-relaxed">{case.description or '案主未補充更多說明'}</p>
-        <div class="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-900">
-            💰 案主預估預算：NT$ {case.budget:,} 元 ｜ 已投標師傅：{len(case.bids)} 位
-        </div>
-
-        <h2 class="text-sm font-bold text-slate-800 mt-6 mb-2">📊 師傅公開工法與制式報價單</h2>
-        <div class="space-y-2">{bids_html}</div>
-
-        <div class="mt-6 text-center">
-            <a href="/" class="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow hover:bg-blue-700">
-                前往平台接案投標
-            </a>
-        </div>
-    </div>
-</body>
-</html>
-    """
-
-# ================= 5. 前端單一介面 =================
+# ================= 4. 前端單一介面 =================
 @app.get("/", response_class=HTMLResponse)
 def index_ui():
-    return """
-<!DOCTYPE html>
+    html_content = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -386,7 +303,6 @@ def index_ui():
     </header>
 
     <main class="max-w-5xl mx-auto p-4 space-y-6">
-        <!-- 消費端發案區 -->
         <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <div class="flex flex-wrap justify-between items-center mb-3">
                 <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -395,7 +311,6 @@ def index_ui():
                 <span class="text-xs text-slate-400">💡 點選標籤自動套用</span>
             </div>
 
-            <!-- 快捷情境範本標籤 -->
             <div class="flex flex-wrap gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <span class="text-xs font-bold text-slate-500 self-center">常見範本：</span>
                 <button type="button" onclick="applyTemplate('浴室地板滲水抓漏', '防水抓漏', 15000, '主臥衛浴淋浴區地面磁磚縫隙有滲漏現象，疑似防水層老化，需重新作防水處理並測試積水保固。')" class="text-xs bg-white hover:bg-blue-50 hover:text-blue-600 border border-slate-300 px-2.5 py-1 rounded-lg transition">🚿 衛浴防水抓漏</button>
@@ -460,7 +375,6 @@ def index_ui():
             </form>
         </section>
 
-        <!-- 即時搶單與競標大廳 -->
         <section>
             <div class="flex justify-between items-center mb-3">
                 <h2 class="text-lg font-bold text-slate-900">⚡ 即時公開競標大廳</h2>
@@ -470,7 +384,6 @@ def index_ui():
         </section>
     </main>
 
-    <!-- 師傅制式化報價彈窗（含 AI 輔助） -->
     <div id="bidModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-xl my-8">
             <div class="flex justify-between items-center border-b pb-2">
@@ -518,7 +431,6 @@ def index_ui():
         </div>
     </div>
 
-    <!-- 師傅線上儲值點數彈窗 -->
     <div id="rechargeModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl text-center">
             <h3 class="font-bold text-base text-slate-900">💳 線上購買接案點數</h3>
@@ -553,14 +465,14 @@ def index_ui():
                 alert("請先輸入簡單描述！");
                 return;
             }
-            descElem.value = `【現況描述】${current}\n【現勘需求】需專業師傅攜帶儀器到府評估，提供制式工法與材料報價。\n【施工期盼】工法透明、責任施工並提供完工保固。`;
+            descElem.value = `【現況描述】${current}\\n【現勘需求】需專業師傅攜帶儀器到府評估，提供制式工法與材料報價。\\n【施工期盼】工法透明、責任施工並提供完工保固。`;
         }
 
         function aiFillBidForm() {
             document.getElementById('materials').value = "CNS標準防水材料、進口抗裂彈性水泥、環氧樹脂";
             document.getElementById('work_duration').value = "約 2 個工作天（含試水）";
             document.getElementById('warranty_period').value = "完工試水驗收後保固 2 年";
-            document.getElementById('work_detail').value = "1. 【現場保護】：全室防塵鋪設與傢俱防護。\n2. 【基底處理】：清除破損老化層，高壓吸塵清理素地。\n3. 【專業工法】：裂縫高壓灌注阻斷水源，施作雙道彈泥防水層。\n4. 【驗收標準】：蓄水 48 小時無滲漏即完成驗收並簽署保固書。";
+            document.getElementById('work_detail').value = "1. 【現場保護】：全室防塵鋪設與傢俱防護。\\n2. 【基底處理】：清除破損老化層，高壓吸塵清理素地。\\n3. 【專業工法】：裂縫高壓灌注阻斷水源，施作雙道彈泥防水層。\\n4. 【驗收標準】：蓄水 48 小時無滲漏即完成驗收並簽署保固書。";
         }
 
         async function fetchLeads() {
@@ -605,18 +517,14 @@ def index_ui():
                     <div>
                         <div class="flex justify-between items-center mb-2">
                             <span class="bg-blue-50 text-blue-700 font-semibold text-xs px-2 py-1 rounded-md border border-blue-200">${item.category}</span>
-                            <div class="flex items-center gap-2">
-                                <a href="/case/${item.id}" target="_blank" class="text-xs text-blue-500 hover:underline font-semibold">🔍 查看獨立頁 ↗</a>
-                                <span class="text-xs font-bold ${item.status === 'CLOSED' ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'} px-2 py-0.5 rounded">
-                                    ${item.status === 'CLOSED' ? '✅ 已結標' : '⚡ 競標中'}
-                                </span>
-                            </div>
+                            <span class="text-xs font-bold ${item.status === 'CLOSED' ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'} px-2 py-0.5 rounded">
+                                ${item.status === 'CLOSED' ? '✅ 已結標' : '⚡ 競標中'}
+                            </span>
                         </div>
                         <h3 class="font-bold text-slate-900 text-base mb-1">${item.title}</h3>
                         <p class="text-xs text-slate-500 mb-2">📍 ${item.district} ｜ 💰 案主預算：NT$ ${item.budget.toLocaleString()}</p>
                         ${item.description ? `<p class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg mb-3 whitespace-pre-line">${item.description}</p>` : ''}
                         
-                        <!-- 業主聯絡資訊 -->
                         <div class="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1 text-xs mb-3">
                             <div class="text-amber-900 font-bold mb-1">📋 業主聯絡資料（現勘專用）</div>
                             <div>稱呼：<span class="font-semibold text-slate-900">${item.contact.name}</span></div>
@@ -624,7 +532,6 @@ def index_ui():
                             <div>LINE：<span class="font-semibold text-slate-900">${item.contact.line}</span></div>
                         </div>
 
-                        <!-- 師傅制式化公開報價明細 -->
                         <div class="space-y-1.5 mb-2">
                             <div class="text-xs font-bold text-slate-700 flex justify-between">
                                 <span>💬 師傅現勘制式報價單 (${item.bids_count})</span>
@@ -737,4 +644,5 @@ def index_ui():
         fetchLeads();
     </script>
 </body>
-</html>
+</html>"""
+    return html_content
