@@ -1,7 +1,8 @@
 import os
+import requests
 from typing import List, Optional
 from datetime import datetime
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Response, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
@@ -24,6 +25,29 @@ except Exception as e:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# LINE 推播輔助函式
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_USER_ID = os.getenv("LINE_USER_ID", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin888")
+
+def send_line_notification(message: str):
+    if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_USER_ID:
+        print("[LINE Push Info] 尚未設定 LINE 金鑰，暫於日誌輸出：\n", message)
+        return
+    try:
+        url = "https://api.line.me/v2/bot/message/push"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+        }
+        data = {
+            "to": LINE_USER_ID,
+            "messages": [{"type": "text", "text": message}]
+        }
+        requests.post(url, headers=headers, json=data, timeout=5)
+    except Exception as err:
+        print("[LINE Push Error]", err)
 
 class Master(Base):
     __tablename__ = "masters"
@@ -242,10 +266,6 @@ footer a:hover { color: #60a5fa; text-decoration: underline; }
 # 品牌官方首頁 (Landing Page)
 @app.get("/", response_class=HTMLResponse)
 async def landing_page(db: Session = Depends(get_db)):
-    jobs_count = db.query(Job).count()
-    awarded_count = db.query(Quote).filter(Quote.is_awarded == True).count()
-    master = db.query(Master).first()
-
     categories_list = [
         ("🔨", "拆除工程", "全室拆除、隔間打除、清運"),
         ("🧱", "泥作工程", "地壁磚鋪設、浴室防水打底"),
@@ -338,6 +358,7 @@ async def landing_page(db: Session = Depends(get_db)):
                     <a href="/#guarantees">四大保障</a>
                     <a href="/#showcase">得標案例</a>
                     <a href="/terms">服務條款</a>
+                    <a href="/admin" style="color: #cbd5e1; font-size: 12px;">🔒 管理登入</a>
                     <a href="/app" class="btn-nav-primary">進入媒合大廳 🚀</a>
                 </div>
             </nav>
@@ -421,7 +442,8 @@ async def landing_page(db: Session = Depends(get_db)):
                 <div style="margin-top: 10px;">
                     <a href="/terms">服務條款</a> |
                     <a href="/privacy">隱私權政策</a> |
-                    <a href="/disclaimer">免責聲明與交易安全</a>
+                    <a href="/disclaimer">免責聲明與交易安全</a> |
+                    <a href="/admin">管理者後台</a>
                 </div>
             </footer>
         </div>
@@ -524,7 +546,6 @@ async def app_hall_page(
                 <span>📞 電話：<strong>{phone_display}</strong></span>
             </div>
 
-            <!-- 師傅報價區 -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
                 <div style="font-size: 14px; font-weight: bold; color: #93c5fd;">💬 廠商專業比價清單 (已累積 {len(j.quotes)} 家報價・開放自由比價)</div>
             </div>
@@ -532,7 +553,6 @@ async def app_hall_page(
                 {quotes_list_html if j.quotes else '<p style="color: var(--text-muted); font-size: 13px;">尚無廠商報價，搶先送出第一筆報價爭取案源！</p>'}
             </div>
 
-            <!-- 師傅快速搶單報價 Form -->
             {f'''
             <div class="quote-form-box">
                 <h4>👷 廠商快速搶單報價 (無家數限制・消耗 10 點)</h4>
@@ -562,7 +582,6 @@ async def app_hall_page(
             </div>
             ''' if j.status == 'MATCHING' else ''}
 
-            <!-- 完工評價區 -->
             {f'''
             <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155;">
                 <h4>⭐ 業主完工驗收評價</h4>
@@ -782,7 +801,7 @@ async def app_hall_page(
                 "宜蘭縣": ["宜蘭市", "羅東鎮", "蘇澳鎮", "頭城鎮", "礁溪鄉", "壯圍鄉", "員山鄉", "冬山鄉", "五結鄉", "三星鄉", "大同鄉", "南澳鄉"],
                 "花蓮縣": ["花蓮市", "鳳林鎮", "玉里鎮", "新城鄉", "吉安鄉", "壽豐鄉", "光復鄉", "豐濱鄉", "瑞穗鄉", "富里鄉", "秀林鄉", "萬榮鄉", "卓溪鄉"],
                 "台東縣": ["台東市", "成功鎮", "關山鎮", "卑南鄉", "大武鄉", "太麻里鄉", "東河鄉", "長濱鄉", "鹿野鄉", "池上鄉", "綠島鄉", "延平鄉", "海端鄉", "達仁鄉", "金峰鄉", "蘭嶼鄉"],
-                "澎湖縣": ["馬公市", "湖西鄉", "白沙鄉", "西嶼鄉", "望安鄉", "七美鄉"],
+                "澎湖縣": ["淡水區", "湖西鄉", "白沙鄉", "西嶼鄉", "望安鄉", "七美鄉"],
                 "金門縣": ["金城鎮", "金湖鎮", "金沙鎮", "金寧鄉", "烈嶼鄉", "烏坵鄉"],
                 "連江縣": ["南竿鄉", "北竿鄉", "莒光鄉", "東引鄉"]
             }};
@@ -818,6 +837,292 @@ async def app_hall_page(
     </html>
     """
     return html
+
+# ----------------- 極簡管理者專屬後台 (/admin) -----------------
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(
+    auth: Optional[str] = Cookie(None),
+    pwd: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    # 簡易密碼驗證
+    is_authed = (auth == "authenticated") or (pwd == ADMIN_PASSWORD)
+    
+    if not is_authed:
+        return f"""
+        <!DOCTYPE html>
+        <html lang="zh-TW">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>管理者登入 - QT30</title>
+            <style>{COMMON_CSS}</style>
+        </head>
+        <body style="display: flex; justify-content: center; align-items: center; min-height: 80vh;">
+            <div class="card" style="width: 360px; text-align: center;">
+                <h2 style="margin-bottom: 8px;">🔒 QT30 管理者後台</h2>
+                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 20px;">請輸入管理密碼（預設 admin888）</p>
+                <form method="get" action="/admin">
+                    <input type="password" name="pwd" placeholder="請輸入管理密碼" required style="margin-bottom: 12px; text-align: center;">
+                    <button type="submit" class="btn-primary" style="width: 100%;">登入後台</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        """
+
+    jobs = db.query(Job).order_by(Job.id.desc()).all()
+    masters = db.query(Master).all()
+    quotes = db.query(Quote).order_by(Quote.id.desc()).all()
+
+    jobs_admin_rows = ""
+    for j in jobs:
+        quotes_count = len(j.quotes)
+        jobs_admin_rows += f"""
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);">#{j.id}</td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);"><strong>{j.title}</strong><br><span style="font-size: 11px; color: var(--text-muted);">{j.category} | {j.location}</span></td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border); color: #60a5fa;"><strong>{j.customer_name}</strong><br><a href="tel:{j.customer_phone}" style="color: #34d399; font-weight: bold; text-decoration: none;">📞 {j.customer_phone}</a></td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);">{j.budget_range}</td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);"><span class="badge bg-purple">{quotes_count} 家報價</span></td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted);">{j.created_at.strftime('%m/%d %H:%M')}</td>
+        </tr>
+        """
+
+    masters_admin_rows = ""
+    for m in masters:
+        masters_admin_rows += f"""
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);">#{m.id}</td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);"><strong>{m.name}</strong><br><span style="font-size: 11px; color: var(--text-muted);">{m.phone}</span></td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);"><span class="badge-points" style="font-size: 14px;">{m.points} 點</span></td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);">⭐ {m.rating} ({m.review_count}則)</td>
+            <td style="padding: 10px; border-bottom: 1px solid var(--border);">
+                <form action="/admin/add-points" method="post" style="display: flex; gap: 6px;">
+                    <input type="hidden" name="master_id" value="{m.id}">
+                    <input type="number" name="points" value="100" style="width: 70px; padding: 4px 6px; font-size: 12px;">
+                    <button type="submit" class="btn-primary" style="padding: 4px 10px; font-size: 12px;">+ 儲值點數</button>
+                </form>
+            </td>
+        </tr>
+        """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>極簡管理總後台 - QT30</title>
+        <style>{COMMON_CSS}
+            table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }}
+            th {{ background: #0f172a; padding: 10px; border-bottom: 2px solid var(--border); color: #93c5fd; }}
+            .stat-card {{ background: #0f172a; border: 1px solid var(--border); padding: 15px; border-radius: 8px; text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <nav>
+                <div class="brand">👑 QT30 管理者專屬總覽後台</div>
+                <div class="nav-links">
+                    <a href="/app" target="_blank">🌐 前台大廳</a>
+                    <a href="/" target="_blank">🏠 官網首頁</a>
+                </div>
+            </nav>
+
+            <!-- 數據統計 -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+                <div class="stat-card">
+                    <div style="font-size: 24px; font-weight: 800; color: #60a5fa;">{len(jobs)}</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">總發案量</div>
+                </div>
+                <div class="stat-card">
+                    <div style="font-size: 24px; font-weight: 800; color: #34d399;">{len(quotes)}</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">總報價筆數</div>
+                </div>
+                <div class="stat-card">
+                    <div style="font-size: 24px; font-weight: 800; color: #f59e0b;">{len(masters)}</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">註冊廠商數</div>
+                </div>
+                <div class="stat-card">
+                    <div style="font-size: 24px; font-weight: 800; color: #c084fc;">{len(quotes) * 10} 點</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">撮合消耗總點數</div>
+                </div>
+            </div>
+
+            <!-- 師傅廠商與點數管理 -->
+            <div class="card">
+                <h3 style="margin-bottom: 12px; color: #93c5fd;">👷 師傅廠商點數充值與管理</h3>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>廠商名稱 / 電話</th>
+                                <th>目前點數</th>
+                                <th>滿意度</th>
+                                <th>手動加值點數</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {masters_admin_rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 業主完整發案名冊 (未遮蔽電話) -->
+            <div class="card">
+                <h3 style="margin-bottom: 12px; color: #93c5fd;">📋 業主發案全紀錄 (完整真實電話・點擊直撥)</h3>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>案件標題 / 地區</th>
+                                <th>案主真實聯絡電話</th>
+                                <th>預算範圍</th>
+                                <th>比價狀況</th>
+                                <th>發案時間</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {jobs_admin_rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    response = HTMLResponse(content=html)
+    response.set_cookie(key="auth", value="authenticated", max_age=86400*7)
+    return response
+
+@app.post("/admin/add-points")
+async def admin_add_points(
+    master_id: int = Form(...),
+    points: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    master = db.query(Master).filter(Master.id == master_id).first()
+    if master:
+        master.points += points
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+# ----------------- 前台與一般 API -----------------
+@app.post("/create-job")
+async def create_job(
+    title: str = Form(...),
+    category: str = Form(...),
+    city: str = Form(...),
+    district: str = Form(...),
+    budget_range: str = Form(...),
+    customer_name: str = Form(...),
+    customer_phone: str = Form(...),
+    description: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    full_location = f"{city}{district}"
+    job = Job(
+        title=title,
+        category=category,
+        city=city,
+        district=district,
+        location=full_location,
+        budget_range=budget_range,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        description=description,
+        status="MATCHING"
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    # 業主一填單，伺服器 0.5 秒內自動發送 LINE 通知
+    line_msg = f"""🔔【QT30 新修繕發案通知】
+━━━━━━━━━━━━━━━━━━
+👤 案主姓名：{customer_name}
+📞 完整電話：{customer_phone}
+📍 施工地點：{full_location}
+🏷️ 工程類別：{category}
+💰 預算範圍：{budget_range}
+📝 需求詳情：{description}
+━━━━━━━━━━━━━━━━━━
+👉 管理後台：https://qt30-platform.onrender.com/admin
+👉 媒合大廳：https://qt30-platform.onrender.com/app"""
+    
+    send_line_notification(line_msg)
+
+    return RedirectResponse(url="/app", status_code=303)
+
+@app.post("/submit-quote")
+async def submit_quote(
+    job_id: int = Form(...),
+    amount: int = Form(...),
+    breakdown: str = Form(...),
+    days_required: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    master = db.query(Master).first()
+    if master.points < 10:
+        raise HTTPException(status_code=400, detail="點數不足，請先儲值點數！")
+    
+    master.points -= 10
+    quote = Quote(
+        job_id=job_id,
+        master_id=master.id,
+        amount=amount,
+        breakdown=breakdown,
+        days_required=days_required
+    )
+    db.add(quote)
+    db.commit()
+    return RedirectResponse(url="/app", status_code=303)
+
+@app.post("/award-quote")
+async def award_quote(quote_id: int = Form(...), db: Session = Depends(get_db)):
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if quote:
+        quote.is_awarded = True
+        quote.job.status = "AWARDED"
+        db.commit()
+    return RedirectResponse(url="/app", status_code=303)
+
+@app.post("/submit-review")
+async def submit_review(
+    job_id: int = Form(...),
+    customer_name: str = Form(...),
+    rating: int = Form(...),
+    comment: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    awarded_quote = next((q for q in job.quotes if q.is_awarded), None)
+    master_id = awarded_quote.master_id if awarded_quote else None
+
+    review = Review(
+        job_id=job_id,
+        master_id=master_id,
+        customer_name=customer_name,
+        rating=rating,
+        comment=comment
+    )
+    db.add(review)
+
+    if master_id:
+        master = db.query(Master).filter(Master.id == master_id).first()
+        if master:
+            all_master_reviews = db.query(Review).filter(Review.master_id == master.id).all()
+            total_ratings = sum(r.rating for r in all_master_reviews) + rating
+            master.review_count = len(all_master_reviews) + 1
+            master.rating = round(total_ratings / master.review_count, 1)
+
+    db.commit()
+    return RedirectResponse(url="/app", status_code=303)
 
 @app.get("/master/{master_id}", response_class=HTMLResponse)
 async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
@@ -1051,97 +1356,3 @@ async def disclaimer_page():
     </body>
     </html>
     """
-
-@app.post("/create-job")
-async def create_job(
-    title: str = Form(...),
-    category: str = Form(...),
-    city: str = Form(...),
-    district: str = Form(...),
-    budget_range: str = Form(...),
-    customer_name: str = Form(...),
-    customer_phone: str = Form(...),
-    description: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    full_location = f"{city}{district}"
-    job = Job(
-        title=title,
-        category=category,
-        city=city,
-        district=district,
-        location=full_location,
-        budget_range=budget_range,
-        customer_name=customer_name,
-        customer_phone=customer_phone,
-        description=description,
-        status="MATCHING"
-    )
-    db.add(job)
-    db.commit()
-    return RedirectResponse(url="/app", status_code=303)
-
-@app.post("/submit-quote")
-async def submit_quote(
-    job_id: int = Form(...),
-    amount: int = Form(...),
-    breakdown: str = Form(...),
-    days_required: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    master = db.query(Master).first()
-    if master.points < 10:
-        raise HTTPException(status_code=400, detail="點數不足，請先儲值點數！")
-    
-    master.points -= 10
-    quote = Quote(
-        job_id=job_id,
-        master_id=master.id,
-        amount=amount,
-        breakdown=breakdown,
-        days_required=days_required
-    )
-    db.add(quote)
-    db.commit()
-    return RedirectResponse(url="/app", status_code=303)
-
-@app.post("/award-quote")
-async def award_quote(quote_id: int = Form(...), db: Session = Depends(get_db)):
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if quote:
-        quote.is_awarded = True
-        quote.job.status = "AWARDED"
-        db.commit()
-    return RedirectResponse(url="/app", status_code=303)
-
-@app.post("/submit-review")
-async def submit_review(
-    job_id: int = Form(...),
-    customer_name: str = Form(...),
-    rating: int = Form(...),
-    comment: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    job = db.query(Job).filter(Job.id == job_id).first()
-    awarded_quote = next((q for q in job.quotes if q.is_awarded), None)
-    master_id = awarded_quote.master_id if awarded_quote else None
-
-    review = Review(
-        job_id=job_id,
-        master_id=master_id,
-        customer_name=customer_name,
-        rating=rating,
-        comment=comment
-    )
-    db.add(review)
-
-    if master_id:
-        master = db.query(Master).filter(Master.id == master_id).first()
-        if master:
-            all_master_reviews = db.query(Review).filter(Review.master_id == master.id).all()
-            total_ratings = sum(r.rating for r in all_master_reviews) + rating
-            master.review_count = len(all_master_reviews) + 1
-            master.rating = round(total_ratings / master.review_count, 1)
-
-    db.commit()
-    return RedirectResponse(url="/app", status_code=303)
