@@ -1,75 +1,64 @@
-import json
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, Text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from datetime import datetime
 
 DATABASE_URL = "sqlite:///./platform.db"
 
 engine = create_engine(
-    DATABASE_URL, 
-    connect_args={"check_same_thread": False}
+    DATABASE_URL, connect_args={"check_same_thread": False}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
 
-class ExpertModel(Base):
-    __tablename__ = "experts"
+class User(Base):
+    __tablename__ = "users"
 
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    rating = Column(Float, default=4.9)
-    wallet_points = Column(Integer, default=5000)
-    dispute_rate = Column(Float, default=0.01)
-    is_licensed = Column(Boolean, default=False)  # 審核通過後才為 True
-    license_number = Column(String, nullable=True)  # 裝修牌照/證照字號
-    license_file_url = Column(String, nullable=True)  # 證照照片路徑
-    verification_status = Column(String, default="unverified")  # unverified / pending / approved / rejected
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    role = Column(String(20), default="expert") # "client" 或 "expert"
+    points = Column(Integer, default=100)        # 預設贈送 100 點
+    is_verified = Column(Boolean, default=False) # 牌照審核狀態
+    license_url = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-class DemandModel(Base):
-    __tablename__ = "demands"
+    unlocks = relationship("LeadUnlock", back_populates="expert")
 
-    id = Column(String, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    category = Column(String, nullable=False)
+class Case(Base):
+    __tablename__ = "cases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(100), nullable=False)
+    category = Column(String(50), nullable=False)
+    district = Column(String(50), nullable=False)
     budget = Column(Integer, nullable=False)
-    region = Column(String, nullable=False)
-    detailed_address = Column(String, nullable=False)
-    has_supervision = Column(Boolean, default=False)
-    supervision_fee = Column(Integer, default=0)
-    total_contract_amount = Column(Integer, default=0)
-    base_lead_price = Column(Integer, default=300)
-    _unlocked_experts = Column(Text, default="[]")
-    _photos = Column(Text, default="[]")
+    description = Column(Text, nullable=True)
+    image_url = Column(String(255), nullable=True)
 
-    @property
-    def unlocked_experts(self):
-        return json.loads(self._unlocked_experts) if self._unlocked_experts else []
+    # 發案人真實聯絡資訊（未解鎖前保護）
+    client_name = Column(String(50), nullable=False)
+    client_phone = Column(String(20), nullable=False)
+    client_line = Column(String(50), nullable=True)
 
-    @unlocked_experts.setter
-    def unlocked_experts(self, value):
-        self._unlocked_experts = json.dumps(value)
+    # 媒合名單搶單參數
+    unlock_fee = Column(Integer, default=30)     # 解鎖單筆名單扣除點數
+    max_unlocks = Column(Integer, default=3)     # 限制最多 3 位師傅搶單
+    current_unlocks = Column(Integer, default=0) # 已解鎖人數
+    created_at = Column(DateTime, default=datetime.utcnow)
 
-    @property
-    def photos(self):
-        return json.loads(self._photos) if self._photos else []
+    unlocks = relationship("LeadUnlock", back_populates="case")
 
-    @photos.setter
-    def photos(self, value):
-        self._photos = json.dumps(value)
+class LeadUnlock(Base):
+    __tablename__ = "lead_unlocks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"))
+    expert_id = Column(Integer, ForeignKey("users.id"))
+    unlocked_at = Column(DateTime, default=datetime.utcnow)
+
+    case = relationship("Case", back_populates="unlocks")
+    expert = relationship("User", back_populates="unlocks")
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    expert = db.query(ExpertModel).filter(ExpertModel.id == "exp_1").first()
-    if not expert:
-        default_expert = ExpertModel(
-            id="exp_1",
-            name="金牌水電行-阿銘",
-            rating=4.9,
-            wallet_points=5000,
-            dispute_rate=0.01,
-            is_licensed=False,
-            verification_status="unverified"
-        )
-        db.add(default_expert)
-        db.commit()
-    db.close()
