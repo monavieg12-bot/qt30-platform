@@ -44,7 +44,7 @@ def send_line_notification(message_text: str):
     except Exception as e:
         print(f"LINE 推播發送失敗: {e}")
 
-# 綠界官方測試金流設定
+# 綠界測試金流
 ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "2000132")
 ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "5294y06JbISpM5x9")
 ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "v77hoKGq4kWxNNIS")
@@ -91,6 +91,7 @@ def create_case(data: CaseCreate):
         "id": case_id,
         "tradeNo": trade_no,
         "status": "待派工",
+        "technician": "未指派",
         "paymentStatus": "未付款",
         "depositAmount": data.depositAmount or 500,
         "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -109,7 +110,7 @@ def create_case(data: CaseCreate):
         f"💰 預估定金：NT$ {new_case['depositAmount']}\n"
         f"📝 案件描述：{new_case['description']}\n"
         f"------------------------\n"
-        f"⚡ 系統已建立訂單，待客戶付款/派工！"
+        f"⚡ 系統已建立訂單，可至後台進行派工！"
     )
     send_line_notification(msg)
     return {"success": True, "case": new_case}
@@ -177,7 +178,7 @@ async def ecpay_callback(request: Request):
                     f"💰 付款金額：NT$ {c['depositAmount']}\n"
                     f"🎉 付款狀態：已完成付款 (綠界測試金流)\n"
                     f"------------------------\n"
-                    f"請儘速確認派工！"
+                    f"請至派工後台指派師傅！"
                 )
                 send_line_notification(msg)
                 break
@@ -187,7 +188,20 @@ async def ecpay_callback(request: Request):
 def get_cases():
     return {"success": True, "cases": cases_db}
 
-# --- 內建客戶發案頁面 (/app) ---
+@app.patch("/api/cases/{case_id}")
+def update_case(case_id: str, data: CaseUpdate):
+    for c in cases_db:
+        if c["id"] == case_id:
+            if data.status is not None:
+                c["status"] = data.status
+            if data.technician is not None:
+                c["technician"] = data.technician
+            if data.paymentStatus is not None:
+                c["paymentStatus"] = data.paymentStatus
+            return {"success": True, "case": c}
+    raise HTTPException(status_code=404, detail="找不到案件")
+
+# --- 客戶發案頁面 (/app) ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -292,6 +306,131 @@ def serve_app_page():
             btn.innerText = '送出預約報修';
           }
         });
+      </script>
+    </body>
+    </html>
+    """
+
+# --- 派工管理後台 (/admin) ---
+@app.get("/admin", response_class=HTMLResponse)
+def serve_admin_page():
+    return """
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>QT30 派工管理後台</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-100 min-h-screen p-4 sm:p-8">
+      <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm gap-4">
+          <div>
+            <h1 class="text-2xl font-black text-slate-800">QT30 派工管理後台</h1>
+            <p class="text-sm text-slate-500 mt-1">即時掌握修繕案件、付款狀態與師傅派工</p>
+          </div>
+          <button onclick="loadCases()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow transition">
+            🔄 重新整理清單
+          </button>
+        </header>
+
+        <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-600">
+              <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th class="p-4">案件編號 / 時間</th>
+                  <th class="p-4">客戶資訊</th>
+                  <th class="p-4">修繕項目 / 內容</th>
+                  <th class="p-4">定金 / 付款狀態</th>
+                  <th class="p-4">派工師傅</th>
+                  <th class="p-4">案件狀態</th>
+                  <th class="p-4 text-center">操作</th>
+                </tr>
+              </thead>
+              <tbody id="caseTableBody" class="divide-y divide-slate-100">
+                <tr><td colspan="7" class="p-8 text-center text-slate-400">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        async function loadCases() {
+          const tbody = document.getElementById('caseTableBody');
+          try {
+            const res = await fetch('/api/cases');
+            const data = await res.json();
+            if (!data.cases || data.cases.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-slate-400">目前尚無案件</td></tr>';
+              return;
+            }
+            tbody.innerHTML = data.cases.map(c => `
+              <tr class="hover:bg-slate-50 transition">
+                <td class="p-4">
+                  <span class="font-mono font-bold text-blue-600">${c.id}</span>
+                  <div class="text-xs text-slate-400 mt-0.5">${c.createdAt}</div>
+                </td>
+                <td class="p-4">
+                  <div class="font-bold text-slate-800">${c.clientName}</div>
+                  <div class="text-xs text-slate-500">${c.clientPhone}</div>
+                  <div class="text-xs text-slate-400">${c.address}</div>
+                </td>
+                <td class="p-4">
+                  <span class="inline-block px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs font-semibold">${c.item}</span>
+                  <p class="text-xs text-slate-500 mt-1 max-w-xs truncate">${c.description}</p>
+                </td>
+                <td class="p-4">
+                  <div class="font-semibold text-slate-700">NT$ ${c.depositAmount}</div>
+                  <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold ${c.paymentStatus === '已付款' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
+                    ${c.paymentStatus}
+                  </span>
+                </td>
+                <td class="p-4">
+                  <input type="text" id="tech-${c.id}" value="${c.technician || ''}" placeholder="未指派" class="border border-slate-300 rounded px-2 py-1 text-xs w-24 focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                </td>
+                <td class="p-4">
+                  <select id="status-${c.id}" class="border border-slate-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none">
+                    <option value="待派工" ${c.status === '待派工' ? 'selected' : ''}>待派工</option>
+                    <option value="施工中" ${c.status === '施工中' ? 'selected' : ''}>施工中</option>
+                    <option value="已完工" ${c.status === '已完工' ? 'selected' : ''}>已完工</option>
+                    <option value="已結案" ${c.status === '已結案' ? 'selected' : ''}>已結案</option>
+                  </select>
+                </td>
+                <td class="p-4 text-center">
+                  <button onclick="saveCase('${c.id}')" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded transition">
+                    儲存更新
+                  </button>
+                </td>
+              </tr>
+            `).join('');
+          } catch(e) {
+            tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-rose-500">載入失敗，請重新整理</td></tr>';
+          }
+        }
+
+        async function saveCase(id) {
+          const tech = document.getElementById('tech-' + id).value;
+          const status = document.getElementById('status-' + id).value;
+          try {
+            const res = await fetch('/api/cases/' + id, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ technician: tech, status: status })
+            });
+            const data = await res.json();
+            if (data.success) {
+              alert('案件 ' + id + ' 已成功更新！');
+              loadCases();
+            }
+          } catch(e) {
+            alert('更新失敗');
+          }
+        }
+
+        loadCases();
       </script>
     </body>
     </html>
