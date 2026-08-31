@@ -10,10 +10,20 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./qt30_platform.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(
-    DATABASE_URL, 
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
+# 加入容錯連線機制：連不上 PostgreSQL 時自動降級回退到 SQLite，確保服務永不崩潰
+try:
+    if "sqlite" in DATABASE_URL:
+        engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    else:
+        engine = create_engine(DATABASE_URL, connect_args={"connect_timeout": 5})
+    # 測試連線
+    with engine.connect() as conn:
+        pass
+except Exception as e:
+    print(f"[DB Warning] 資料庫連線失敗 ({e})，自動切換至本機 SQLite 資料庫...")
+    DATABASE_URL = "sqlite:///./qt30_platform.db"
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -230,7 +240,6 @@ footer a { color: #94a3b8; text-decoration: none; margin: 0 10px; }
 footer a:hover { color: #60a5fa; text-decoration: underline; }
 """
 
-# 品牌官方首頁 (Landing Page)
 @app.get("/", response_class=HTMLResponse)
 async def landing_page(db: Session = Depends(get_db)):
     jobs_count = db.query(Job).count()
@@ -260,14 +269,13 @@ async def landing_page(db: Session = Depends(get_db)):
     cat_cards_html = ""
     for icon, name, desc in categories_list:
         cat_cards_html += f"""
-        <div class="cat-card">
+        <div class="cat-card" onclick="window.location.href='/app'">
             <div class="cat-icon">{icon}</div>
             <div class="cat-name">{name}</div>
             <div class="cat-desc">{desc}</div>
         </div>
         """
 
-    # 取得最新公開得標案例
     awarded_quotes = db.query(Quote).filter(Quote.is_awarded == True).order_by(Quote.id.desc()).limit(3).all()
     showcase_html = ""
     for aq in awarded_quotes:
@@ -334,7 +342,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 </div>
             </nav>
 
-            <!-- Hero 主視覺 -->
             <div class="hero">
                 <div class="hero-badge">🛡️ 國家專業證照核實・工料明細透明公開</div>
                 <h1 class="hero-title">告別裝潢裝修黑洞<br>3分鐘免費發案，精準比價安心成交</h1>
@@ -345,7 +352,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 </div>
             </div>
 
-            <!-- 數據指標 -->
             <div class="stats-bar">
                 <div>
                     <div class="stat-big">100%</div>
@@ -361,7 +367,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 </div>
             </div>
 
-            <!-- 17 大工程工種 -->
             <div id="categories" class="section-header">
                 <h2>🛠️ 涵蓋 17 大專業裝潢與修繕工程</h2>
                 <p>不論是局部點工修繕還是全室翻新統包，皆有合格專業技師為您服務</p>
@@ -370,7 +375,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 {cat_cards_html}
             </div>
 
-            <!-- 四大保障 -->
             <div id="guarantees" class="section-header">
                 <h2>🛡️ 為什麼百萬業主與廠商信賴 QT30？</h2>
                 <p>用透明制度與科技機制，全面杜絕傳統裝修糾紛</p>
@@ -398,7 +402,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 </div>
             </div>
 
-            <!-- 最新得標成交案例 -->
             <div id="showcase" class="section-header">
                 <h2>🏆 最新公開得標行情案例</h2>
                 <p>透明呈現近期真實成交價格與業主完工驗收滿意度</p>
@@ -407,7 +410,6 @@ async def landing_page(db: Session = Depends(get_db)):
                 {showcase_html}
             </div>
 
-            <!-- 底部行動呼籲 -->
             <div class="card" style="margin-top: 60px; text-align: center; background: linear-gradient(135deg, #1e293b, #1e1b4b); border-color: #4f46e5; padding: 40px 20px;">
                 <h2 style="font-size: 26px; margin-bottom: 10px;">現在就開始您的安心修繕體驗</h2>
                 <p style="color: var(--text-muted); margin-bottom: 20px;">全台 22 縣市專業廠商即時在線，免費發案、透明比價。</p>
@@ -428,7 +430,6 @@ async def landing_page(db: Session = Depends(get_db)):
     """
     return html
 
-# 媒合操作大廳 (/app)
 @app.get("/app", response_class=HTMLResponse)
 async def app_hall_page(
     filter_city: Optional[str] = Query(None),
@@ -516,13 +517,11 @@ async def app_hall_page(
                 <span>📞 電話：<strong>{phone_display}</strong></span>
             </div>
 
-            <!-- 師傅報價區 -->
             <div style="font-size: 14px; font-weight: bold; color: #93c5fd; margin-bottom: 10px;">💬 廠商專業報價與工料明細 ({len(j.quotes)})</div>
             <div>
                 {quotes_list_html if j.quotes else '<p style="color: var(--text-muted); font-size: 13px;">尚無廠商報價，搶先送出報價爭取案源！</p>'}
             </div>
 
-            <!-- 師傅快速搶單報價 Form -->
             {f'''
             <div class="quote-form-box">
                 <h4>👷 廠商快速搶單報價 (消耗 10 點數)</h4>
@@ -552,7 +551,6 @@ async def app_hall_page(
             </div>
             ''' if j.status == 'MATCHING' else ''}
 
-            <!-- 完工評價區 -->
             {f'''
             <div style="background: #0f172a; border-radius: 8px; padding: 12px; margin-top: 12px; border: 1px solid #334155;">
                 <h4>⭐ 業主完工驗收評價</h4>
@@ -594,7 +592,6 @@ async def app_hall_page(
                 </div>
             </nav>
 
-            <!-- 業主發案表單 -->
             <div class="card">
                 <h2>📝 業主快速刊登裝潢與修繕需求</h2>
                 <div style="margin: 14px 0;">
@@ -708,7 +705,6 @@ async def app_hall_page(
                 </form>
             </div>
 
-            <!-- 師傅篩選與案件列表 -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
                 <h2>📋 最新發布案件 ({len(jobs)})</h2>
                 <form method="get" class="filter-bar" style="margin-bottom: 0;">
@@ -810,7 +806,6 @@ async def app_hall_page(
     """
     return html
 
-# 廠商/師傅公開履歷與得標案例庫頁面
 @app.get("/master/{master_id}", response_class=HTMLResponse)
 async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
     master = db.query(Master).filter(Master.id == master_id).first()
@@ -883,7 +878,6 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
                 </div>
             </nav>
 
-            <!-- 廠商主履歷卡片 -->
             <div class="card" style="border-top: 4px solid #3b82f6;">
                 <div class="profile-header">
                     <div class="avatar">👷</div>
@@ -918,7 +912,6 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
                 </div>
             </div>
 
-            <!-- 公開得標歷史與案例明細 -->
             <h2 style="margin-bottom: 15px;">📜 公開得標案例庫與工項明細 ({len(awarded_quotes)})</h2>
             {awarded_cards_html if awarded_cards_html else '<div class="card"><p style="color: var(--text-muted);">尚無得標紀錄，得標後將自動收錄於此！</p></div>'}
 
@@ -931,7 +924,6 @@ async def master_profile_page(master_id: int, db: Session = Depends(get_db)):
     """
     return html
 
-# 法律條款獨立頁面
 @app.get("/terms", response_class=HTMLResponse)
 async def terms_page():
     return f"""
