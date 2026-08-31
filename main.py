@@ -73,6 +73,7 @@ class CaseCreate(BaseModel):
     item: Optional[str] = "一般修繕"
     description: Optional[str] = "無詳細描述"
     depositAmount: Optional[int] = 500
+    photo: Optional[str] = None  # 支援圖片 Base64
 
 class CaseUpdate(BaseModel):
     status: Optional[str] = None
@@ -94,10 +95,13 @@ def create_case(data: CaseCreate):
         "technician": "未指派",
         "paymentStatus": "未付款",
         "depositAmount": data.depositAmount or 500,
+        "photo": data.photo,
         "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         **data.dict()
     }
     cases_db.insert(0, new_case)
+
+    photo_tag = "📷 【已附現場損壞照片】" if data.photo else "📷 【未附現場照片】"
 
     msg = (
         f"🔔 【QT30 新案件通報】\n"
@@ -108,9 +112,10 @@ def create_case(data: CaseCreate):
         f"📍 修繕地址：{new_case['address']}\n"
         f"🔧 修繕項目：{new_case['item']}\n"
         f"💰 預估定金：NT$ {new_case['depositAmount']}\n"
-        f"📝 案件描述：{new_case['description']}\n"
+        f"📝 狀況描述：{new_case['description']}\n"
+        f"{photo_tag}\n"
         f"------------------------\n"
-        f"⚡ 系統已建立訂單，可至後台進行派工！"
+        f"⚡ 系統已建立訂單，請至後台查看照片並指派師傅！"
     )
     send_line_notification(msg)
     return {"success": True, "case": new_case}
@@ -201,7 +206,7 @@ def update_case(case_id: str, data: CaseUpdate):
             return {"success": True, "case": c}
     raise HTTPException(status_code=404, detail="找不到案件")
 
-# --- 客戶發案頁面 (/app) ---
+# --- 客戶發案頁面 (/app) 支援照片上傳與預覽 ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -217,7 +222,7 @@ def serve_app_page():
       <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-blue-600 p-6 text-white text-center">
           <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
-          <p class="text-blue-100 text-sm mt-1">填單立即通知師傅，並支援線上支付定金</p>
+          <p class="text-blue-100 text-sm mt-1">拍照上傳現場，立即通知專業師傅</p>
         </div>
         
         <form id="caseForm" class="p-6 space-y-4">
@@ -253,6 +258,14 @@ def serve_app_page():
             <textarea id="description" rows="3" placeholder="請簡述損壞情況..." class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
           </div>
 
+          <div>
+            <label class="block text-sm font-semibold text-gray-700">上傳現場照片（可拍照或選取照片）</label>
+            <input type="file" id="photoInput" accept="image/*" class="w-full mt-1 p-2 border border-dashed border-gray-400 rounded-lg text-sm bg-gray-50 cursor-pointer">
+            <div id="previewContainer" class="mt-2 hidden">
+              <img id="imagePreview" src="" alt="預覽照片" class="w-full h-40 object-cover rounded-lg border border-gray-200">
+            </div>
+          </div>
+
           <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg shadow-md transition duration-200">
             送出預約報修
           </button>
@@ -271,6 +284,20 @@ def serve_app_page():
       </div>
 
       <script>
+        let base64Photo = null;
+        document.getElementById('photoInput').addEventListener('change', function(e) {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+              base64Photo = evt.target.result;
+              document.getElementById('imagePreview').src = base64Photo;
+              document.getElementById('previewContainer').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+
         document.getElementById('caseForm').addEventListener('submit', async (e) => {
           e.preventDefault();
           const btn = document.getElementById('submitBtn');
@@ -283,7 +310,8 @@ def serve_app_page():
             address: document.getElementById('address').value,
             item: document.getElementById('item').value,
             depositAmount: parseInt(document.getElementById('depositAmount').value) || 500,
-            description: document.getElementById('description').value
+            description: document.getElementById('description').value,
+            photo: base64Photo
           };
 
           try {
@@ -311,7 +339,7 @@ def serve_app_page():
     </html>
     """
 
-# --- 派工管理後台 (/admin) ---
+# --- 派工管理後台 (/admin) 支援照片放大預覽 ---
 @app.get("/admin", response_class=HTMLResponse)
 def serve_admin_page():
     return """
@@ -324,11 +352,11 @@ def serve_admin_page():
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-100 min-h-screen p-4 sm:p-8">
-      <div class="max-w-6xl mx-auto">
+      <div class="max-w-7xl mx-auto">
         <header class="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm gap-4">
           <div>
             <h1 class="text-2xl font-black text-slate-800">QT30 派工管理後台</h1>
-            <p class="text-sm text-slate-500 mt-1">即時掌握修繕案件、付款狀態與師傅派工</p>
+            <p class="text-sm text-slate-500 mt-1">即時掌握修繕案件、現場照片、付款狀態與師傅派工</p>
           </div>
           <button onclick="loadCases()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow transition">
             🔄 重新整理清單
@@ -342,6 +370,7 @@ def serve_admin_page():
                 <tr>
                   <th class="p-4">案件編號 / 時間</th>
                   <th class="p-4">客戶資訊</th>
+                  <th class="p-4">現場照片</th>
                   <th class="p-4">修繕項目 / 內容</th>
                   <th class="p-4">定金 / 付款狀態</th>
                   <th class="p-4">派工師傅</th>
@@ -350,21 +379,31 @@ def serve_admin_page():
                 </tr>
               </thead>
               <tbody id="caseTableBody" class="divide-y divide-slate-100">
-                <tr><td colspan="7" class="p-8 text-center text-slate-400">載入中...</td></tr>
+                <tr><td colspan="8" class="p-8 text-center text-slate-400">載入中...</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
+      <!-- 圖片放大彈窗 -->
+      <div id="imgModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4" onclick="this.classList.add('hidden')">
+        <img id="modalImg" src="" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl">
+      </div>
+
       <script>
+        function viewPhoto(src) {
+          document.getElementById('modalImg').src = src;
+          document.getElementById('imgModal').classList.remove('hidden');
+        }
+
         async function loadCases() {
           const tbody = document.getElementById('caseTableBody');
           try {
             const res = await fetch('/api/cases');
             const data = await res.json();
             if (!data.cases || data.cases.length === 0) {
-              tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-slate-400">目前尚無案件</td></tr>';
+              tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400">目前尚無案件</td></tr>';
               return;
             }
             tbody.innerHTML = data.cases.map(c => `
@@ -377,6 +416,11 @@ def serve_admin_page():
                   <div class="font-bold text-slate-800">${c.clientName}</div>
                   <div class="text-xs text-slate-500">${c.clientPhone}</div>
                   <div class="text-xs text-slate-400">${c.address}</div>
+                </td>
+                <td class="p-4">
+                  ${c.photo ? `
+                    <img src="${c.photo}" onclick="viewPhoto('${c.photo}')" class="w-14 h-14 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-80 transition" title="點擊放大查看">
+                  ` : `<span class="text-xs text-slate-300">無照片</span>`}
                 </td>
                 <td class="p-4">
                   <span class="inline-block px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs font-semibold">${c.item}</span>
@@ -407,7 +451,7 @@ def serve_admin_page():
               </tr>
             `).join('');
           } catch(e) {
-            tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-rose-500">載入失敗，請重新整理</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-rose-500">載入失敗，請重新整理</td></tr>';
           }
         }
 
