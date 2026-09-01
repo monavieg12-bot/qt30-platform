@@ -204,7 +204,7 @@ def process_paid_order(trade_no, trade_amt=""):
     return False
 
 # ==========================================
-# 0. 品牌官方首頁 (深色高質感・實價登錄・深耕社區)
+# 0. 品牌官方首頁 (深色高質感・精準文案升級)
 # ==========================================
 @app.route("/")
 def home():
@@ -215,7 +215,7 @@ def home():
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>QT30 社區修繕團隊｜裝潢報價實價登錄 ✕ 社區達人駐點深耕社區</title>
-        <meta name="description" content="QT30 社區修繕團隊致力於打破修繕黑箱。所有報價公開透明網路永久留存、深耕社區五星評價、每一分修繕預算都花在刀口上！">
+        <meta name="description" content="QT30 社區修繕團隊：所有報價公開透明網路永久留存、社區達人深耕社區、公開報價每一分修繕預算都花在刀口上！">
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500 selection:text-slate-950">
@@ -232,6 +232,7 @@ def home():
             </div>
         </header>
 
+        <!-- Hero 主視覺區塊 -->
         <section class="py-20 px-4 text-center relative overflow-hidden bg-radial from-slate-900 to-slate-950">
             <div class="max-w-3xl mx-auto space-y-6">
                 <div class="inline-flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-3.5 py-1.5 rounded-full text-xs font-bold text-amber-300">
@@ -241,8 +242,8 @@ def home():
                     裝潢報價實價登錄<br>
                     <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-200">社區達人駐點深耕社區</span>
                 </h1>
-                <p class="text-slate-400 text-base md:text-lg leading-relaxed">
-                    淡水與雙北在地認證師傅・所有報價公開透明網路永久留存・AI 智慧精準估算・深耕社區五星信賴
+                <p class="text-slate-300 text-base md:text-lg leading-relaxed font-medium">
+                    所有報價公開透明網路永久留存 ✕ 社區達人深耕社區 ✕ 公開報價每一分修繕預算都花在刀口上
                 </p>
                 <div class="flex flex-col sm:flex-row justify-center gap-4 pt-4">
                     <a href="/app" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-lg px-8 py-4 rounded-2xl shadow-xl shadow-amber-500/20 hover:scale-105 transition">🚀 立即免費發案 (AI 互動填單)</a>
@@ -251,7 +252,7 @@ def home():
             </div>
         </section>
 
-        <!-- 核心宣導卡片 -->
+        <!-- 核心三大承諾卡片 -->
         <section class="py-16 max-w-5xl mx-auto px-4">
             <div class="bg-gradient-to-b from-slate-900 to-slate-900/60 p-8 rounded-3xl border border-slate-800 space-y-6">
                 <div class="text-center space-y-2">
@@ -260,16 +261,16 @@ def home():
                 </div>
                 <div class="grid md:grid-cols-3 gap-4 text-xs">
                     <div class="bg-slate-950/80 p-5 rounded-2xl border border-slate-800 space-y-2">
-                        <div class="text-amber-400 font-black text-sm">📊 1. 所有報價公開透明網路永久留存</div>
-                        <p class="text-slate-400 leading-relaxed">工項明細、建材規格、施工照片與報價單據永久留存雲端，遭遇瑕疵或偷工減料，完整存證保障權益。</p>
+                        <div class="text-amber-400 font-black text-sm">📊 1. 所有報價公開透明網路永久留存。</div>
+                        <p class="text-slate-400 leading-relaxed">工項明細、材料規格與報價單據永久存證於雲端數據庫。遭遇施工瑕疵、偷工減料或履約爭議，完整紀錄保障權益不吃虧。</p>
                     </div>
                     <div class="bg-slate-950/80 p-5 rounded-2xl border border-slate-800 space-y-2">
-                        <div class="text-amber-400 font-black text-sm">🌟 2. 深耕社區五星品質評價</div>
-                        <p class="text-slate-400 leading-relaxed">在地達人深耕社區重視商譽，完工接受住戶公開五星評價檢驗，絕不敢隨意中途加價或怠工。</p>
+                        <div class="text-amber-400 font-black text-sm">🌟 2. 社區達人深耕社區。</div>
+                        <p class="text-slate-400 leading-relaxed">在地實名認證達人長年駐點深耕社區，重視在地名譽與鄰里口碑，完工接受住戶公開五星評價檢驗，絕不敢隨意怠工或加價。</p>
                     </div>
                     <div class="bg-slate-950/80 p-5 rounded-2xl border border-slate-800 space-y-2">
-                        <div class="text-amber-400 font-black text-sm">🔍 3. 每一分修繕預算都花在刀口上</div>
-                        <p class="text-slate-400 leading-relaxed">多位在地師傅暗標競爭，系統比對同社區真實歷史實價登錄，絕不買貴，公道透明！</p>
+                        <div class="text-amber-400 font-black text-sm">🔍 3. 公開報價 每一分修繕預算都花在刀口上。</div>
+                        <p class="text-slate-400 leading-relaxed">多位在地師傅暗標競爭，系統比對同社區真實歷史實價登錄，工料行情公開透明，杜絕漫天喊價，讓預算發揮最大價值！</p>
                     </div>
                 </div>
             </div>
@@ -279,26 +280,26 @@ def home():
         <section class="py-12 max-w-6xl mx-auto px-4">
             <h2 class="text-xl font-black text-center mb-8 text-slate-300">涵蓋 20+ 完整居家修繕與裝潢工種</h2>
             <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3 text-center text-xs font-bold">
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🔨 拆除工程</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">⚡ 水電工程</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🧱 泥作貼磚</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🪵 木作裝潢</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🗄️ 系統櫃工程</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🔍 抓漏檢測</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🏠 屋頂防水</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🏢 外牆防水</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🏡 老屋翻新統包</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🚿 衛浴整修</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">❄️ 冷氣空調</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">📦 搬家清運</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🪟 鋁門窗/氣密窗</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🎨 油漆粉刷</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🚪 鐵工/鐵捲門</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🪞 玻璃工程</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🛋️ 窗簾壁紙地毯</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🧹 清潔細清</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🌿 園藝造景</div>
-                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl">🛠️ 其他綜合修繕</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🔨 拆除工程</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">⚡ 水電工程</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🧱 泥作貼磚</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🪵 木作裝潢</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🗄️ 系統櫃工程</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🔍 抓漏檢測</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🏠 屋頂防水</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🏢 外牆防水</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🏡 老屋翻新統包</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🚿 衛浴整修</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">❄️ 冷氣空調</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">📦 搬家清運</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🪟 鋁門窗/氣密窗</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🎨 油漆粉刷</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🚪 鐵工/鐵捲門</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🪞 玻璃工程</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🛋️ 窗簾壁紙地毯</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🧹 清潔細清</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🌿 園藝造景</div>
+                <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-xl hover:border-amber-500/50 transition">🛠️ 其他綜合修繕</div>
             </div>
         </section>
 
@@ -453,7 +454,7 @@ def client_app():
 
                 <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
                     <p class="font-bold text-amber-400">🛡️ QT30 發案承諾：</p>
-                    <p>所有報價公開透明網路永久留存。每一分修繕預算都花在刀口上。認證師傅將主動預約現場勘查。</p>
+                    <p>所有報價公開透明網路永久留存。公開報價每一分修繕預算都花在刀口上。認證師傅將主動預約現場勘查。</p>
                 </div>
 
                 <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl transition text-base">🚀 免費送出發案（開放認證師傅競價）</button>
@@ -487,7 +488,7 @@ def client_app():
         </div>
 
         <script>
-            let map, marker, mapLayers = [];
+            let map, marker;
             const districtCoords = {
                 "淡水區": [25.175, 121.443],
                 "板橋區": [25.012, 121.465],
@@ -571,7 +572,6 @@ def client_app():
 
             window.onload = initMap;
 
-            // AI 量化估算
             function triggerAiCalc() {
                 const cat = document.getElementById('category').value;
                 const ping = parseFloat(document.getElementById('areaPing').value) || 0;
@@ -588,7 +588,6 @@ def client_app():
                 document.getElementById('aiEstimatedDisplay').innerText = 'NT$ ' + Math.round(estimated).toLocaleString();
             }
 
-            // AI 窗口互動對話邏輯
             function openAiChatModal() { document.getElementById('aiChatModal').classList.remove('hidden'); }
             function closeAiChatModal() { document.getElementById('aiChatModal').classList.add('hidden'); }
 
@@ -606,7 +605,7 @@ def client_app():
 
                 let reply = '', estPing = 20, estCat = '油漆粉刷', estBudget = 30000;
                 if(text.includes('油漆')) {
-                    reply = '📊 【AI 分析】：依據雙北與淡水實價登錄，20 坪室內油漆批土粉刷行情約 NT$ 30,000 ~ 35,000（含局部壁癌防滲底漆處理）。已為您帶入估算！';
+                    reply = '📊 【AI 分析】：依據雙北與淡水實價登錄，20 坪室內油漆批土粉刷行情約 NT$ 30,000 ~ 35,000。已為您帶入估算！';
                     estCat = '油漆粉刷'; estPing = 20; estBudget = 32000;
                 } else if(text.includes('浴室') || text.includes('衛浴')) {
                     reply = '📊 【AI 分析】：1.5 坪標準衛浴整修（浴缸拆除+彈泥防水重做+地壁磚+乾濕分離）市場行情約 NT$ 75,000 ~ 85,000。已為您帶入估算！';
@@ -628,7 +627,6 @@ def client_app():
                 }, 400);
             }
 
-            // 照片上傳轉 Base64
             document.getElementById('orderPhotoFile').addEventListener('change', function(e) {
                 const file = e.target.files[0];
                 if(file) {
@@ -676,7 +674,7 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅端工作台 (/tech) - 實名制/證照填寫 + 7折3%動態扣點 + 階梯儲值
+# 2. 師傅端工作台 (/tech)
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
@@ -728,7 +726,6 @@ def tech_app():
                     <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 rounded-xl transition">🔑 登入工作台</button>
                 </form>
 
-                <!-- 註冊 (含實名證照欄位) -->
                 <form id="registerForm" class="space-y-3 hidden">
                     <div>
                         <label class="block text-xs text-slate-300">真實姓名 (實名核驗)</label>
@@ -785,7 +782,7 @@ def tech_app():
                 <div>
                     <h2 class="text-xl font-black flex items-center gap-2">
                         <span id="userName"></span> 師傅
-                        <span class="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400 font-bold border border-green-500/30" id="userBadge">✓ 實名核驗達人</span>
+                        <span class="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400 font-bold border border-green-500/30">✓ 實名核驗達人</span>
                     </h2>
                     <p class="text-slate-400 text-xs mt-1">主修：<span id="userSkills" class="text-amber-300 font-bold"></span> ｜ 證照：<span id="userLicense" class="text-slate-200"></span> (經歷 <span id="userExp"></span> 年)</p>
                     <p class="text-slate-400 text-xs mt-0.5">駐點行政區：<span id="userDistricts" class="text-green-400 font-bold">無</span> ｜ 我的推薦碼：<span id="myRefCode" class="text-amber-400 font-bold font-mono"></span></p>
@@ -800,7 +797,6 @@ def tech_app():
                 </div>
             </div>
 
-            <!-- 分頁導覽 -->
             <div class="flex border-b border-slate-800 space-x-6 text-sm font-bold">
                 <button onclick="showSection('orders')" id="btnTabOrders" class="text-amber-400 border-b-2 border-amber-400 pb-2">📋 競標大廳</button>
                 <button onclick="showSection('myProjects')" id="btnTabProjects" class="text-slate-400 pb-2">🛠️ 得標工單存證</button>
@@ -1428,7 +1424,6 @@ def admin_page():
 # 4. 後端 API 集合
 # ==========================================
 
-# 公開地圖標記 API (供業主端地圖展示駐點師傅、進行中、歷史實價)
 @app.route("/api/public/map_pins")
 def api_public_map_pins():
     conn = sqlite3.connect(DB_FILE)
@@ -1455,12 +1450,11 @@ def api_orders():
         b = int(d.get('budget', 0))
         cat = d.get('category', '')
         
-        # 扣點計算公式：AI 行情預估價 * 70% * 3%
         calculated_pts = int(b * 0.70 * 0.03)
         if '老屋翻新' in cat or '室內設計' in cat or b >= 500000:
-            req_pts = max(3000, calculated_pts)  # 大案保底 3,000 點
+            req_pts = max(3000, calculated_pts)
         else:
-            req_pts = max(30, calculated_pts)    # 小案保底 30 點
+            req_pts = max(30, calculated_pts)
 
         c.execute('''
             INSERT INTO orders (name, phone, district, address, lat, lng, category, area_ping, scope_desc, house_age, description, photo_data, budget, required_points, ref_tech_code, created_at)
