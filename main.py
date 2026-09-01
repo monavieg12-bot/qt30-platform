@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 派工與金流平台 (正式正式上線版)")
+app = FastAPI(title="QT30 派工與金流平台 (正式營運版)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,7 +48,6 @@ def send_line_notification(message_text: str):
 ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "3513009")
 ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "LefLmiHiXMuHMPhA")
 ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "Vcz5eQfMDiRe3ZSy")
-# 正式金流付款跳轉網址
 ECPAY_PAYMENT_URL = "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
 
 def ecpay_url_encode(s: str) -> str:
@@ -73,7 +72,7 @@ class CaseCreate(BaseModel):
     address: Optional[str] = "未填寫"
     item: Optional[str] = "一般修繕"
     description: Optional[str] = "無詳細描述"
-    depositAmount: Optional[int] = 500
+    depositAmount: Optional[int] = 500  # 預算金額
     photo: Optional[str] = None
 
 class CaseUpdate(BaseModel):
@@ -112,7 +111,7 @@ def create_case(data: CaseCreate):
         f"📞 聯絡電話：{new_case['clientPhone']}\n"
         f"📍 修繕地址：{new_case['address']}\n"
         f"🔧 報修項目：{new_case['item']}\n"
-        f"💰 預收定金：NT$ {new_case['depositAmount']}\n"
+        f"💰 預算金額：NT$ {new_case['depositAmount']}\n"
         f"📝 狀況描述：{new_case['description']}\n"
         f"{photo_tag}\n"
         f"------------------------\n"
@@ -136,8 +135,8 @@ def get_payment_page(case_id: str, request: Request):
         "MerchantTradeDate": trade_date,
         "PaymentType": "aio",
         "TotalAmount": str(target["depositAmount"]),
-        "TradeDesc": ecpay_url_encode("QT30維修預付定金"),
-        "ItemName": f"{target['item']} 預約修繕定金",
+        "TradeDesc": ecpay_url_encode("QT30維修預算支付"),
+        "ItemName": f"{target['item']} 修繕預算金額",
         "ReturnURL": f"{base_url}/api/ecpay/callback",
         "ClientBackURL": f"{base_url}/app",
         "ChoosePayment": "ALL",
@@ -155,7 +154,7 @@ def get_payment_page(case_id: str, request: Request):
     <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f8fafc;">
         <div style="text-align:center;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
             <h2 style="color:#0284c7;">正在前往綠界官方安全收銀台...</h2>
-            <p>案件編號：<b>{target['id']}</b> | 應付金額：<b>NT$ {target['depositAmount']}</b></p>
+            <p>案件編號：<b>{target['id']}</b> | 預算金額：<b>NT$ {target['depositAmount']}</b></p>
             <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
                 {inputs_html}
             </form>
@@ -207,6 +206,7 @@ def update_case(case_id: str, data: CaseUpdate):
             return {"success": True, "case": c}
     raise HTTPException(status_code=404, detail="找不到案件")
 
+# --- 客戶發案頁面 (/app) ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -222,7 +222,7 @@ def serve_app_page():
       <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-blue-600 p-6 text-white text-center">
           <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
-          <p class="text-blue-100 text-sm mt-1">線上預約專業師傅，支援即時金流定金支付</p>
+          <p class="text-blue-100 text-sm mt-1">線上預約專業師傅，支援線上即時付款</p>
         </div>
         
         <form id="caseForm" class="p-6 space-y-4">
@@ -250,7 +250,7 @@ def serve_app_page():
             </select>
           </div>
           <div>
-            <label class="block text-sm font-semibold text-gray-700">預約定金 (NT$)</label>
+            <label class="block text-sm font-semibold text-gray-700">預算金額 (NT$)</label>
             <input type="number" id="depositAmount" value="500" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
           </div>
           <div>
@@ -277,7 +277,7 @@ def serve_app_page():
           <p class="text-xs text-gray-500 mt-1">師傅已收到 LINE 即時推播通知</p>
           <div class="mt-4">
             <a id="payBtn" href="#" class="inline-block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow">
-              💳 前往綠界線上支付定金 (NT$ <span id="resAmount">500</span>)
+              💳 前往綠界線上支付預算 (NT$ <span id="resAmount">500</span>)
             </a>
           </div>
         </div>
@@ -339,6 +339,7 @@ def serve_app_page():
     </html>
     """
 
+# --- 派工管理後台 (/admin) ---
 @app.get("/admin", response_class=HTMLResponse)
 def serve_admin_page():
     return """
@@ -371,7 +372,7 @@ def serve_admin_page():
                   <th class="p-4">客戶資訊</th>
                   <th class="p-4">現場照片</th>
                   <th class="p-4">修繕項目 / 內容</th>
-                  <th class="p-4">定金 / 付款狀態</th>
+                  <th class="p-4">預算金額 / 付款狀態</th>
                   <th class="p-4">派工師傅</th>
                   <th class="p-4">案件狀態</th>
                   <th class="p-4 text-center">操作</th>
