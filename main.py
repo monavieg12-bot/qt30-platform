@@ -207,9 +207,9 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅接單工作台 (/tech)
+# 2. 師傅接單工作台 (/tech) - 支援 GET 與 POST 回跳
 # ==========================================
-@app.route("/tech")
+@app.route("/tech", methods=["GET", "POST"])
 def tech_app():
     return render_template_string('''
     <!DOCTYPE html>
