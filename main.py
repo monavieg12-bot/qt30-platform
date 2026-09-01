@@ -9,17 +9,17 @@ from flask import Flask, request, jsonify, render_template_string, redirect
 app = Flask(__name__)
 
 # ==========================================
-# 核心設定與綠界正式金流參數（已寫入最新金鑰）
+# 核心設定與綠界金流參數（官方測試特店，免審核直接可用）
 # ==========================================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin888")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 ADMIN_LINE_USER_ID = os.environ.get("ADMIN_LINE_USER_ID", "")
 
-# 綠界正式環境參數
-ECPAY_MERCHANT_ID = "3513009"
-ECPAY_HASH_KEY = "LefLmiHiXMuHMPhA"
-ECPAY_HASH_IV = "Vcz5eQfMDiRe3ZSy"
-ECPAY_API_URL = "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
+# 綠界官方測試環境參數
+ECPAY_MERCHANT_ID = "3002607"
+ECPAY_HASH_KEY = "pwFHCqoHZGmho4wH"
+ECPAY_HASH_IV = "EkRm7iFT261dpevs"
+ECPAY_API_URL = "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
 BASE_URL = os.environ.get("BASE_URL", "https://qt30-platform.onrender.com")
 
 DB_FILE = "qt30.db"
@@ -45,7 +45,7 @@ def init_db():
             created_at TEXT
         )
     ''')
-    # 師傅資料表
+    # 師傅資料表（預設審核狀態直接給 approved 通過）
     c.execute('''
         CREATE TABLE IF NOT EXISTS technicians (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +57,7 @@ def init_db():
             skills TEXT,
             area TEXT,
             points INTEGER DEFAULT 100,
-            status TEXT DEFAULT 'pending',
+            status TEXT DEFAULT 'approved',
             created_at TEXT
         )
     ''')
@@ -72,6 +72,10 @@ def init_db():
             created_at TEXT
         )
     ''')
+    
+    # 預設建一組已通過的測試師傅帳號
+    c.execute("INSERT OR IGNORE INTO technicians (phone, password, name, skills, area, points, status, created_at) VALUES ('0912345678', '123456', '陳測試', '水電維修', '雙北地區', 100, 'approved', '2026-09-01 00:00')")
+    
     conn.commit()
     conn.close()
 
@@ -81,17 +85,11 @@ init_db()
 # 綠界官方標準 CheckMacValue 演算法
 # ==========================================
 def generate_check_mac_value(params, hash_key, hash_iv):
-    # 1. 排除 CheckMacValue 欄位
     filtered_params = {k: str(v) for k, v in params.items() if k != 'CheckMacValue'}
-    # 2. 依照參數名稱由小到大排序 (A-Z)
     sorted_params = sorted(filtered_params.items(), key=lambda x: x[0].lower())
-    # 3. 組合參數字串
     param_str = "&".join([f"{k}={v}" for k, v in sorted_params])
-    # 4. 前後加上 HashKey 與 HashIV
     raw_str = f"HashKey={hash_key}&{param_str}&HashIV={hash_iv}"
-    # 5. URL Encode (轉為小寫)
     encoded_str = urllib.parse.quote_plus(raw_str).lower()
-    # 6. 依照綠界規範進行特定字元替換
     encoded_str = (encoded_str
                    .replace('%2d', '-')
                    .replace('%5f', '_')
@@ -101,7 +99,6 @@ def generate_check_mac_value(params, hash_key, hash_iv):
                    .replace('%28', '(')
                    .replace('%29', ')')
                    .replace('%20', '+'))
-    # 7. SHA256 雜湊並轉為全大寫
     return hashlib.sha256(encoded_str.encode('utf-8')).hexdigest().upper()
 
 # ==========================================
@@ -275,7 +272,7 @@ def tech_app():
                         <label class="block text-xs text-slate-300">服務地區</label>
                         <input type="text" id="regArea" placeholder="例：雙北地區、桃園市" class="w-full mt-1 p-2 bg-slate-900 border border-slate-600 rounded-lg text-white">
                     </div>
-                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition">📝 註冊送出審核 (送 100 點)</button>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition">📝 立即註冊開通 (送 100 點)</button>
                 </form>
             </div>
         </div>
@@ -287,7 +284,7 @@ def tech_app():
                 <div>
                     <h2 class="text-xl font-bold flex items-center gap-2">
                         <span id="userName"></span> 師傅
-                        <span id="userStatusBadge" class="text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 font-normal">實名審核中</span>
+                        <span class="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✓ 實名認證通過</span>
                     </h2>
                     <p class="text-slate-400 text-sm mt-0.5">專業：<span id="userSkills"></span> | 服務區：<span id="userArea"></span></p>
                 </div>
@@ -364,8 +361,8 @@ def tech_app():
 
             document.getElementById('loginForm').onsubmit = async (e) => {
                 e.preventDefault();
-                const phone = document.getElementById('loginPhone').value;
-                const password = document.getElementById('loginPassword').value;
+                const phone = document.getElementById('loginPhone').value.trim();
+                const password = document.getElementById('loginPassword').value.trim();
                 const res = await fetch('/api/tech/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -384,11 +381,11 @@ def tech_app():
             document.getElementById('registerForm').onsubmit = async (e) => {
                 e.preventDefault();
                 const payload = {
-                    name: document.getElementById('regName').value,
-                    phone: document.getElementById('regPhone').value,
-                    password: document.getElementById('regPassword').value,
-                    skills: document.getElementById('regSkills').value,
-                    area: document.getElementById('regArea').value
+                    name: document.getElementById('regName').value.trim(),
+                    phone: document.getElementById('regPhone').value.trim(),
+                    password: document.getElementById('regPassword').value.trim(),
+                    skills: document.getElementById('regSkills').value.trim(),
+                    area: document.getElementById('regArea').value.trim()
                 };
                 const res = await fetch('/api/tech/register', {
                     method: 'POST',
@@ -397,8 +394,10 @@ def tech_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    alert('註冊成功！系統已贈送 100 點體驗點數。管理員審核通過後即可搶單。');
-                    location.reload();
+                    alert('🎉 註冊成功！系統已贈送 100 點體驗點數並自動完成認證。');
+                    currentTech = data.tech;
+                    localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
+                    renderDashboard();
                 } else {
                     alert(data.message || '註冊失敗');
                 }
@@ -411,15 +410,6 @@ def tech_app():
                 document.getElementById('userSkills').innerText = currentTech.skills || '未填寫';
                 document.getElementById('userArea').innerText = currentTech.area || '全區';
                 document.getElementById('userPoints').innerText = currentTech.points;
-                
-                const badge = document.getElementById('userStatusBadge');
-                if(currentTech.status === 'approved') {
-                    badge.innerText = '✓ 實名認證通過';
-                    badge.className = 'text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400 font-bold';
-                } else {
-                    badge.innerText = '⏳ 實名審核中 (暫無法搶單)';
-                    badge.className = 'text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400';
-                }
                 loadOrders();
             }
 
@@ -469,10 +459,6 @@ def tech_app():
             }
 
             async function takeOrder(orderId) {
-                if(currentTech.status !== 'approved') {
-                    alert('您的實名認證仍在審核中，暫時無法搶單。');
-                    return;
-                }
                 if(currentTech.points < 50) {
                     alert('點數餘額不足 50 點，請先前往儲值！');
                     showSection('topup');
@@ -768,16 +754,22 @@ def api_tech_register():
     c = conn.cursor()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     try:
+        # 直接寫入 approved 通過審核
         c.execute('''
             INSERT INTO technicians (phone, password, name, skills, area, points, status, created_at)
-            VALUES (?, ?, ?, ?, ?, 100, 'pending', ?)
+            VALUES (?, ?, ?, ?, ?, 100, 'approved', ?)
         ''', (phone, d['password'], d['name'], d.get('skills', ''), d.get('area', ''), now_str))
         conn.commit()
         conn.close()
 
-        msg = f"🛡️ 【QT30 新師傅實名註冊審核】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}\n\n請前往總控制台 /admin 進行核准。"
+        msg = f"🛡️ 【QT30 新師傅入駐完成】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}\n已自動通過認證。"
         send_line_push_message(msg)
-        return jsonify({"success": True})
+        
+        tech_obj = {
+            "phone": phone, "name": d['name'], "skills": d.get('skills', ''),
+            "area": d.get('area', ''), "points": 100, "status": "approved"
+        }
+        return jsonify({"success": True, "tech": tech_obj})
     except sqlite3.IntegrityError:
         conn.close()
         return jsonify({"success": False, "message": "此手機號碼已經註冊過！"})
@@ -829,9 +821,9 @@ def api_tech_take_order():
 
     c.execute("SELECT name, points, status FROM technicians WHERE phone=?", (phone,))
     t = c.fetchone()
-    if not t or t[2] != 'approved':
+    if not t:
         conn.close()
-        return jsonify({"success": False, "message": "尚未通過實名審核！"})
+        return jsonify({"success": False, "message": "查無此師傅帳號！"})
     if t[1] < 50:
         conn.close()
         return jsonify({"success": False, "message": "點數不足 50 點！"})
