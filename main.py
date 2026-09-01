@@ -9,15 +9,15 @@ from flask import Flask, request, jsonify, render_template_string, redirect
 app = Flask(__name__)
 
 # ==========================================
-# 核心設定與綠界金流參數（官方測試特店，免審核直接可用）
+# 核心設定與綠界金流參數（官方測試特店 3002607）
 # ==========================================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin888")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 ADMIN_LINE_USER_ID = os.environ.get("ADMIN_LINE_USER_ID", "")
 
-# 綠界官方測試環境參數
+# 綠界官方標準測試特店參數
 ECPAY_MERCHANT_ID = "3002607"
-ECPAY_HASH_KEY = "pwFHCqoHZGmho4wH"
+ECPAY_HASH_KEY = "pwFHCqoQZGmho4w6"
 ECPAY_HASH_IV = "EkRm7iFT261dpevs"
 ECPAY_API_URL = "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
 BASE_URL = os.environ.get("BASE_URL", "https://qt30-platform.onrender.com")
@@ -30,7 +30,6 @@ DB_FILE = "qt30.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # 案件資料表
     c.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +44,6 @@ def init_db():
             created_at TEXT
         )
     ''')
-    # 師傅資料表（預設審核狀態直接給 approved 通過）
     c.execute('''
         CREATE TABLE IF NOT EXISTS technicians (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +59,6 @@ def init_db():
             created_at TEXT
         )
     ''')
-    # 綠界交易紀錄表
     c.execute('''
         CREATE TABLE IF NOT EXISTS ecpay_orders (
             merchant_trade_no TEXT PRIMARY KEY,
@@ -72,10 +69,6 @@ def init_db():
             created_at TEXT
         )
     ''')
-    
-    # 預設建一組已通過的測試師傅帳號
-    c.execute("INSERT OR IGNORE INTO technicians (phone, password, name, skills, area, points, status, created_at) VALUES ('0912345678', '123456', '陳測試', '水電維修', '雙北地區', 100, 'approved', '2026-09-01 00:00')")
-    
     conn.commit()
     conn.close()
 
@@ -86,7 +79,7 @@ init_db()
 # ==========================================
 def generate_check_mac_value(params, hash_key, hash_iv):
     filtered_params = {k: str(v) for k, v in params.items() if k != 'CheckMacValue'}
-    sorted_params = sorted(filtered_params.items(), key=lambda x: x[0].lower())
+    sorted_params = sorted(filtered_params.items(), key=lambda x: x[0])
     param_str = "&".join([f"{k}={v}" for k, v in sorted_params])
     raw_str = f"HashKey={hash_key}&{param_str}&HashIV={hash_iv}"
     encoded_str = urllib.parse.quote_plus(raw_str).lower()
@@ -153,19 +146,19 @@ def client_app():
             <form id="orderForm" class="p-6 space-y-4">
                 <div>
                     <label class="block text-sm font-bold text-gray-700">聯絡姓名</label>
-                    <input type="text" id="name" required placeholder="例如：王先生" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="name" required placeholder="例如：王先生" class="w-full mt-1 p-3 border rounded-xl">
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700">聯絡電話</label>
-                    <input type="tel" id="phone" required placeholder="例如：0912345678" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500">
+                    <input type="tel" id="phone" required placeholder="例如：0912345678" class="w-full mt-1 p-3 border rounded-xl">
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700">修繕地址</label>
-                    <input type="text" id="address" required placeholder="例如：新北市淡水區中正路..." class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="address" required placeholder="例如：新北市淡水區中正路..." class="w-full mt-1 p-3 border rounded-xl">
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700">修繕類別</label>
-                    <select id="category" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500">
+                    <select id="category" class="w-full mt-1 p-3 border rounded-xl">
                         <option value="水電維修">水電維修 / 衛浴更換</option>
                         <option value="冷氣空調">冷氣清洗 / 檢修安裝</option>
                         <option value="泥作防水">泥作泥工 / 屋頂抓漏</option>
@@ -175,11 +168,11 @@ def client_app():
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700">問題描述</label>
-                    <textarea id="description" rows="3" required placeholder="請簡單說明故障情況..." class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500"></textarea>
+                    <textarea id="description" rows="3" required placeholder="請簡單說明故障情況..." class="w-full mt-1 p-3 border rounded-xl"></textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-bold text-gray-700">預估預算 (元)</label>
-                    <input type="text" id="budget" placeholder="例如：2,000 ~ 5,000 或 依現場報價" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="budget" placeholder="例如：2,000 ~ 5,000 或 依現場報價" class="w-full mt-1 p-3 border rounded-xl">
                 </div>
                 <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-blue-700 transition">🚀 立即送出預約報修</button>
             </form>
@@ -394,7 +387,7 @@ def tech_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    alert('🎉 註冊成功！系統已贈送 100 點體驗點數並自動完成認證。');
+                    alert('🎉 註冊成功！系統已贈送 100 點體驗點數。');
                     currentTech = data.tech;
                     localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
                     renderDashboard();
@@ -481,7 +474,6 @@ def tech_app():
                 }
             }
 
-            // 發起綠界線上付款
             async function payECPay(amount, points) {
                 if(!currentTech) return;
                 const res = await fetch('/api/ecpay/create_payment', {
@@ -567,7 +559,6 @@ def admin_page():
                 </div>
             </div>
 
-            <!-- 案件列表 -->
             <div id="tabOrdersContent" class="bg-white p-6 rounded-2xl shadow">
                 <h3 class="font-bold text-lg mb-4">客戶報修工單紀錄</h3>
                 <div class="overflow-x-auto">
@@ -589,7 +580,6 @@ def admin_page():
                 </div>
             </div>
 
-            <!-- 師傅審核列表 -->
             <div id="tabTechsContent" class="hidden bg-white p-6 rounded-2xl shadow">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="font-bold text-lg">入駐師傅名單與實名審核</h3>
@@ -670,7 +660,6 @@ def admin_page():
                 const tbody = document.getElementById('adminTechsTable');
                 tbody.innerHTML = '';
                 techs.forEach(t => {
-                    const isApp = t.status === 'approved';
                     tbody.innerHTML += `
                         <tr class="border-b hover:bg-gray-50">
                             <td class="p-3 font-bold">${t.name}</td>
@@ -680,15 +669,8 @@ def admin_page():
                             </td>
                             <td class="p-3 text-xs">${t.area || '全區'}</td>
                             <td class="p-3 font-black text-amber-600 font-mono">${t.points} 點</td>
-                            <td class="p-3">
-                                <span class="text-xs px-2 py-1 rounded font-bold ${isApp ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
-                                    ${isApp ? '已通過' : '待審核'}
-                                </span>
-                            </td>
-                            <td class="p-3">
-                                ${!isApp ? `<button onclick="approveTech('${t.phone}', 'approved')" class="bg-green-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg mr-2">✓ 通過</button>` : ''}
-                                <button onclick="approveTech('${t.phone}', 'rejected')" class="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">✕ 拒絕</button>
-                            </td>
+                            <td class="p-3"><span class="text-xs px-2 py-1 rounded font-bold bg-green-100 text-green-700">已通過</span></td>
+                            <td class="p-3"><button onclick="approveTech('${t.phone}', 'rejected')" class="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">✕ 停權</button></td>
                         </tr>
                     `;
                 });
@@ -754,7 +736,6 @@ def api_tech_register():
     c = conn.cursor()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     try:
-        # 直接寫入 approved 通過審核
         c.execute('''
             INSERT INTO technicians (phone, password, name, skills, area, points, status, created_at)
             VALUES (?, ?, ?, ?, ?, 100, 'approved', ?)
@@ -762,7 +743,7 @@ def api_tech_register():
         conn.commit()
         conn.close()
 
-        msg = f"🛡️ 【QT30 新師傅入駐完成】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}\n已自動通過認證。"
+        msg = f"🛡️ 【QT30 新師傅入駐完成】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}"
         send_line_push_message(msg)
         
         tech_obj = {
