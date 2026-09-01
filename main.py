@@ -34,10 +34,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             phone TEXT,
+            district TEXT DEFAULT '',
             address TEXT,
             category TEXT,
             description TEXT,
-            budget TEXT,
+            budget INTEGER DEFAULT 0,
+            fee_8pct INTEGER DEFAULT 0,
             status TEXT DEFAULT 'pending',
             taken_by TEXT DEFAULT '',
             created_at TEXT
@@ -53,6 +55,7 @@ def init_db():
             license TEXT DEFAULT '',
             skills TEXT,
             area TEXT,
+            exclusive_district TEXT DEFAULT '',
             points INTEGER DEFAULT 100,
             status TEXT DEFAULT 'approved',
             created_at TEXT
@@ -116,7 +119,7 @@ def send_line_push_message(text):
         print(f"LINE Push Error: {e}")
 
 # ==========================================
-# 點數入帳共用核心函式
+# 點數入帳核心函式
 # ==========================================
 def process_paid_order(trade_no, trade_amt=""):
     conn = sqlite3.connect(DB_FILE)
@@ -134,22 +137,19 @@ def process_paid_order(trade_no, trade_amt=""):
         conn.close()
 
         if tech_info:
-            amt_display = trade_amt if trade_amt else "500"
-            msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n儲值金額：NT$ {amt_display}\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
+            amt_display = trade_amt if trade_amt else "線上儲值"
+            msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n儲值方案：NT$ {amt_display}\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
             send_line_push_message(msg)
         return True
     conn.close()
     return False
 
-# ==========================================
-# 首頁導向
-# ==========================================
 @app.route("/")
 def index():
     return redirect("/app")
 
 # ==========================================
-# 1. 客戶端預約報修 (/app)
+# 1. 客戶端預約報修 (/app) - 含 8% 監工條款
 # ==========================================
 @app.route("/app")
 def client_app():
@@ -159,59 +159,103 @@ def client_app():
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>QT30 房屋修繕預約</title>
+        <title>QT30 房屋修繕預約 (含官方代管監工)</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-4">
             <div class="bg-blue-600 p-6 text-white text-center">
-                <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
-                <p class="text-blue-100 text-sm mt-1">填單立即為您安排通過實名認證的專業師傅</p>
+                <h1 class="text-2xl font-black">QT30 專業房屋修繕預約</h1>
+                <p class="text-blue-100 text-xs mt-1">實名認證師傅派工・官方工程品質監工保障</p>
             </div>
             <form id="orderForm" class="p-6 space-y-4">
-                <div>
-                    <label class="block text-sm font-bold text-gray-700">聯絡姓名</label>
-                    <input type="text" id="name" required placeholder="例如：王先生" class="w-full mt-1 p-3 border rounded-xl">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">聯絡姓名</label>
+                        <input type="text" id="name" required placeholder="例：王先生" class="w-full mt-1 p-2.5 border rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">聯絡電話</label>
+                        <input type="tel" id="phone" required placeholder="例：0912345678" class="w-full mt-1 p-2.5 border rounded-xl">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">服務地區</label>
+                        <select id="district" class="w-full mt-1 p-2.5 border rounded-xl bg-white font-bold text-blue-700">
+                            <option value="淡水區">淡水區</option>
+                            <option value="板橋區">板橋區</option>
+                            <option value="三重區">三重區</option>
+                            <option value="中和區">中和區</option>
+                            <option value="新莊區">新莊區</option>
+                            <option value="新店區">新店區</option>
+                            <option value="台北市全區">台北市全區</option>
+                            <option value="桃園市全區">桃園市全區</option>
+                        </select>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-700">詳細修繕地址</label>
+                        <input type="text" id="address" required placeholder="例：中正路一段 100 號 3 樓" class="w-full mt-1 p-2.5 border rounded-xl">
+                    </div>
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-gray-700">聯絡電話</label>
-                    <input type="tel" id="phone" required placeholder="例如：0912345678" class="w-full mt-1 p-3 border rounded-xl">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold text-gray-700">修繕地址</label>
-                    <input type="text" id="address" required placeholder="例如：新北市淡水區中正路..." class="w-full mt-1 p-3 border rounded-xl">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold text-gray-700">修繕類別</label>
-                    <select id="category" class="w-full mt-1 p-3 border rounded-xl">
-                        <option value="水電維修">水電維修 / 衛浴更換</option>
-                        <option value="冷氣空調">冷氣清洗 / 檢修安裝</option>
-                        <option value="泥作防水">泥作泥工 / 屋頂抓漏</option>
+                    <label class="block text-xs font-bold text-gray-700">修繕類別</label>
+                    <select id="category" class="w-full mt-1 p-2.5 border rounded-xl">
+                        <option value="水電維修">水電維修 / 衛浴安裝更換</option>
+                        <option value="冷氣空調">冷氣清洗 / 檢修按裝</option>
+                        <option value="泥作防水">泥作泥工 / 屋頂抓漏防水</option>
                         <option value="油漆粉刷">油漆粉刷 / 壁癌處理</option>
-                        <option value="門窗裝鎖">門窗紗網 / 鎖具更換</option>
+                        <option value="門窗裝修">室內裝修 / 門窗鎖具</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-gray-700">問題描述</label>
-                    <textarea id="description" rows="3" required placeholder="請簡單說明故障情況..." class="w-full mt-1 p-3 border rounded-xl"></textarea>
+                    <label class="block text-xs font-bold text-gray-700">問題詳細描述</label>
+                    <textarea id="description" rows="2" required placeholder="請簡單說明修繕需求或故障情況..." class="w-full mt-1 p-2.5 border rounded-xl"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-gray-700">預估預算 (元)</label>
-                    <input type="text" id="budget" placeholder="例如：2,000 ~ 5,000 或 依現場報價" class="w-full mt-1 p-3 border rounded-xl">
+                    <label class="block text-xs font-bold text-gray-700">預估工程預算 (新台幣)</label>
+                    <input type="number" id="budget" required placeholder="例：10000" oninput="calcFee()" class="w-full mt-1 p-2.5 border rounded-xl font-bold text-amber-600">
                 </div>
+
+                <!-- 8% 監工費試算與條款 -->
+                <div class="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-bold text-blue-900">🛡️ QT30 官方 8% 工程代管監工費：</span>
+                        <span class="font-black text-blue-700 text-sm" id="feeDisplay">NT$ 0</span>
+                    </div>
+                    <p class="text-[11px] text-gray-600 leading-tight">包含：實名認證師傅責任施工、施工進度把關、完工品質驗收保障。</p>
+                    <div class="flex items-start gap-2 pt-1 border-t border-blue-200">
+                        <input type="checkbox" id="agreeTerm" required class="mt-0.5 rounded text-blue-600">
+                        <label for="agreeTerm" class="text-[11px] text-gray-700 font-medium">我已閱讀並同意 <span class="text-blue-600 font-bold underline">「QT30 修繕監工委託服務協議（依最終結算金額計收 8% 監工服務費）」</span></label>
+                    </div>
+                </div>
+
                 <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow hover:bg-blue-700 transition">🚀 立即送出預約報修</button>
             </form>
         </div>
         <script>
+            function calcFee() {
+                const b = parseFloat(document.getElementById('budget').value) || 0;
+                const fee = Math.round(b * 0.08);
+                document.getElementById('feeDisplay').innerText = 'NT$ ' + fee.toLocaleString();
+            }
+
             document.getElementById('orderForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
+                if(!document.getElementById('agreeTerm').checked) {
+                    alert('請先勾選同意 8% 監工服務條款！');
+                    return;
+                }
+                const b = parseFloat(document.getElementById('budget').value) || 0;
                 const payload = {
                     name: document.getElementById('name').value,
                     phone: document.getElementById('phone').value,
+                    district: document.getElementById('district').value,
                     address: document.getElementById('address').value,
                     category: document.getElementById('category').value,
                     description: document.getElementById('description').value,
-                    budget: document.getElementById('budget').value
+                    budget: b,
+                    fee_8pct: Math.round(b * 0.08)
                 };
                 const res = await fetch('/api/orders', {
                     method: 'POST',
@@ -220,8 +264,9 @@ def client_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    alert('預約成功！專業師傅已收到通報，稍後將致電與您確認時間。');
+                    alert('🎉 預約成功！已指派專屬地區認證師傅，稍後將致電與您確認施工時間。');
                     document.getElementById('orderForm').reset();
+                    calcFee();
                 } else {
                     alert('送出失敗，請稍後再試。');
                 }
@@ -232,11 +277,10 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅接單工作台 (/tech)
+# 2. 師傅端接單工作台 (/tech) - 含卡位搶單
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
-    # 綠界導回時立即結算入帳
     if request.method == "POST":
         trade_no = request.form.get("MerchantTradeNo", "")
         rtn_code = request.form.get("RtnCode", "")
@@ -253,21 +297,21 @@ def tech_app():
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>QT30 師傅接單工作台</title>
+        <title>QT30 師傅工作台 (地區卡位版)</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-900 text-slate-100 min-h-screen">
         <div id="authBox" class="p-6 max-w-md mx-auto">
             <div class="text-center py-6">
                 <h1 class="text-3xl font-black text-amber-400">QT30 師傅工作台</h1>
-                <p class="text-slate-400 text-sm mt-1">實名認證・接單搶單・線上儲值</p>
+                <p class="text-slate-400 text-sm mt-1">實名認證・地區獨家卡位・扣點搶單</p>
             </div>
             <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-4">
                 <div class="flex border-b border-slate-700 pb-2 mb-4">
                     <button id="tabLogin" class="flex-1 text-center font-bold text-amber-400 pb-2 border-b-2 border-amber-400">師傅登入</button>
                     <button id="tabRegister" class="flex-1 text-center font-bold text-slate-400 pb-2">新師傅註冊</button>
                 </div>
-                <!-- 登入 Form -->
+                <!-- 登入 -->
                 <form id="loginForm" class="space-y-4">
                     <div>
                         <label class="block text-sm text-slate-300">手機號碼</label>
@@ -279,7 +323,7 @@ def tech_app():
                     </div>
                     <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 rounded-xl transition">🔑 登入工作台</button>
                 </form>
-                <!-- 註冊 Form -->
+                <!-- 註冊 -->
                 <form id="registerForm" class="space-y-3 hidden">
                     <div>
                         <label class="block text-xs text-slate-300">真實姓名</label>
@@ -298,10 +342,10 @@ def tech_app():
                         <input type="text" id="regSkills" placeholder="例：水電、冷氣清洗、泥作抓漏" class="w-full mt-1 p-2 bg-slate-900 border border-slate-600 rounded-lg text-white">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-300">服務地區</label>
-                        <input type="text" id="regArea" placeholder="例：雙北地區、桃園市" class="w-full mt-1 p-2 bg-slate-900 border border-slate-600 rounded-lg text-white">
+                        <label class="block text-xs text-slate-300">主要服務縣市</label>
+                        <input type="text" id="regArea" placeholder="例：雙北地區" class="w-full mt-1 p-2 bg-slate-900 border border-slate-600 rounded-lg text-white">
                     </div>
-                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition">📝 立即註冊開通 (送 100 點)</button>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition">📝 立即註冊 (送 100 點體驗金)</button>
                 </form>
             </div>
         </div>
@@ -313,59 +357,83 @@ def tech_app():
                     <h2 class="text-xl font-bold flex items-center gap-2">
                         <span id="userName"></span> 師傅
                         <span class="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400 font-bold">✓ 實名認證通過</span>
+                        <span id="badgeExclusive" class="hidden text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">👑 區域卡位尊榮師傅</span>
                     </h2>
-                    <p class="text-slate-400 text-sm mt-0.5">專業：<span id="userSkills"></span> | 服務區：<span id="userArea"></span></p>
+                    <p class="text-slate-400 text-sm mt-0.5">專業：<span id="userSkills"></span> | 專屬卡位區：<span id="userExclusive" class="text-amber-400 font-bold">尚未卡位</span></p>
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="text-right">
                         <div class="text-xs text-slate-400">目前點數餘額</div>
                         <div class="text-2xl font-black text-amber-400"><span id="userPoints">0</span> <span class="text-sm font-normal text-slate-300">點</span></div>
                     </div>
-                    <button onclick="showSection('topup')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition">💳 儲值點數</button>
+                    <button onclick="showSection('topup')" class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm">💳 儲值</button>
                     <button onclick="logout()" class="text-slate-400 hover:text-white text-sm">登出</button>
                 </div>
             </div>
 
-            <!-- 分頁 -->
+            <!-- 分頁切換 -->
             <div class="flex border-b border-slate-700 space-x-6 text-sm font-bold">
-                <button onclick="showSection('orders')" id="btnTabOrders" class="text-amber-400 border-b-2 border-amber-400 pb-2">📋 接單大廳 (扣點搶單)</button>
-                <button onclick="showSection('topup')" id="btnTabTopup" class="text-slate-400 pb-2">💎 點數儲值專區</button>
+                <button onclick="showSection('orders')" id="btnTabOrders" class="text-amber-400 border-b-2 border-amber-400 pb-2">📋 派工大廳 (搶單)</button>
+                <button onclick="showSection('lockArea')" id="btnTabLock" class="text-slate-400 pb-2">👑 獨家地區卡位專區</button>
+                <button onclick="showSection('topup')" id="btnTabTopup" class="text-slate-400 pb-2">💎 點數線上儲值</button>
             </div>
 
             <!-- 1. 接單大廳 -->
             <div id="sectionOrders" class="space-y-4">
                 <div class="flex justify-between items-center">
-                    <h3 class="font-bold text-lg text-slate-200">可接修繕案件</h3>
-                    <button onclick="loadOrders()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-600">🔄 重新整理列表</button>
+                    <h3 class="font-bold text-lg text-slate-200">可接案件列表</h3>
+                    <button onclick="loadOrders()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-600">🔄 重新整理</button>
                 </div>
                 <div id="ordersList" class="space-y-3"></div>
             </div>
 
-            <!-- 2. 線上儲值專區 -->
+            <!-- 2. 地區獨家卡位專區 -->
+            <div id="sectionLockArea" class="hidden bg-slate-800 p-6 rounded-2xl border border-slate-700 space-y-6">
+                <div>
+                    <h3 class="text-xl font-bold text-amber-400">👑 區域專屬卡位（享有該區優先派單權）</h3>
+                    <p class="text-slate-400 text-sm mt-1">卡位後，該行政區的所有新發布修繕工單將為您專屬優先保留！卡位費：500 點/月。</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl space-y-3">
+                        <div class="font-bold text-white text-lg">新北・淡水區</div>
+                        <p class="text-xs text-slate-400">目前卡位狀態：<span class="text-green-400">開放卡位中</span></p>
+                        <button onclick="lockDistrict('淡水區')" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded-lg text-sm">👑 消耗 500 點卡位</button>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl space-y-3">
+                        <div class="font-bold text-white text-lg">新北・板橋區</div>
+                        <p class="text-xs text-slate-400">目前卡位狀態：<span class="text-green-400">開放卡位中</span></p>
+                        <button onclick="lockDistrict('板橋區')" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded-lg text-sm">👑 消耗 500 點卡位</button>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl space-y-3">
+                        <div class="font-bold text-white text-lg">新北・三重區</div>
+                        <p class="text-xs text-slate-400">目前卡位狀態：<span class="text-green-400">開放卡位中</span></p>
+                        <button onclick="lockDistrict('三重區')" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded-lg text-sm">👑 消耗 500 點卡位</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 線上儲值專區 -->
             <div id="sectionTopup" class="hidden bg-slate-800 p-6 rounded-2xl border border-slate-700 space-y-6">
                 <div>
                     <h3 class="text-xl font-bold text-amber-400">💎 師傅在線購點</h3>
-                    <p class="text-slate-400 text-sm mt-1">每搶接一張訂單僅扣除 50 點！線上刷卡付款後系統即時自動入帳。</p>
+                    <p class="text-slate-400 text-sm mt-1">單次搶單扣 50 點，線上刷卡付款後系統即時自動入帳。</p>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl text-center space-y-3 hover:border-amber-500 transition">
+                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl text-center space-y-3">
                         <h4 class="font-bold text-slate-200">基礎體驗包</h4>
                         <div class="text-3xl font-black text-amber-400">500 <span class="text-sm font-normal text-slate-400">點</span></div>
-                        <p class="text-xs text-slate-400">可搶接約 10 張修繕案件</p>
-                        <button onclick="payECPay(500, 500)" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-lg">線上刷卡 NT$ 500</button>
+                        <button onclick="payECPay(500, 500)" class="w-full bg-amber-500 text-slate-950 font-bold py-2 rounded-lg">線上刷卡 NT$ 500</button>
                     </div>
-                    <div class="bg-slate-900 border-2 border-amber-500 p-5 rounded-xl text-center space-y-3 relative shadow-lg">
-                        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 text-xs font-black px-2.5 py-0.5 rounded-full">超值推薦</span>
+                    <div class="bg-slate-900 border-2 border-amber-500 p-5 rounded-xl text-center space-y-3 relative">
+                        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">超值推薦</span>
                         <h4 class="font-bold text-slate-200">專業進階包</h4>
                         <div class="text-3xl font-black text-amber-400">1,100 <span class="text-sm font-normal text-slate-400">點</span></div>
-                        <p class="text-xs text-amber-300 font-bold">加贈 100 點！可搶 22 件</p>
-                        <button onclick="payECPay(1000, 1100)" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-lg">線上刷卡 NT$ 1,000</button>
+                        <button onclick="payECPay(1000, 1100)" class="w-full bg-amber-500 text-slate-950 font-bold py-2 rounded-lg">線上刷卡 NT$ 1,000</button>
                     </div>
-                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl text-center space-y-3 hover:border-amber-500 transition">
+                    <div class="bg-slate-900 border border-slate-700 p-5 rounded-xl text-center space-y-3">
                         <h4 class="font-bold text-slate-200">團隊尊榮包</h4>
                         <div class="text-3xl font-black text-amber-400">2,400 <span class="text-sm font-normal text-slate-400">點</span></div>
-                        <p class="text-xs text-amber-300 font-bold">加贈 400 點！可搶 48 件</p>
-                        <button onclick="payECPay(2000, 2400)" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 rounded-lg">線上刷卡 NT$ 2,000</button>
+                        <button onclick="payECPay(2000, 2400)" class="w-full bg-amber-500 text-slate-950 font-bold py-2 rounded-lg">線上刷卡 NT$ 2,000</button>
                     </div>
                 </div>
             </div>
@@ -435,13 +503,19 @@ def tech_app():
                 document.getElementById('authBox').classList.add('hidden');
                 document.getElementById('dashBox').classList.remove('hidden');
                 document.getElementById('userName').innerText = currentTech.name;
-                document.getElementById('userSkills').innerText = currentTech.skills || '未填寫';
-                document.getElementById('userArea').innerText = currentTech.area || '全區';
+                document.getElementById('userSkills').innerText = currentTech.skills || '全項修繕';
                 document.getElementById('userPoints').innerText = currentTech.points;
+                
+                if(currentTech.exclusive_district) {
+                    document.getElementById('userExclusive').innerText = currentTech.exclusive_district;
+                    document.getElementById('badgeExclusive').classList.remove('hidden');
+                } else {
+                    document.getElementById('userExclusive').innerText = '尚未卡位 (公共派工)';
+                    document.getElementById('badgeExclusive').classList.add('hidden');
+                }
                 loadOrders();
             }
 
-            // 即時向伺服器同步最新點數
             async function syncTechInfo() {
                 if(!currentTech || !currentTech.phone) return;
                 try {
@@ -456,16 +530,44 @@ def tech_app():
             }
 
             function showSection(sec) {
+                document.getElementById('sectionOrders').classList.add('hidden');
+                document.getElementById('sectionLockArea').classList.add('hidden');
+                document.getElementById('sectionTopup').classList.add('hidden');
+                document.getElementById('btnTabOrders').className = 'text-slate-400 pb-2';
+                document.getElementById('btnTabLock').className = 'text-slate-400 pb-2';
+                document.getElementById('btnTabTopup').className = 'text-slate-400 pb-2';
+
                 if(sec === 'orders') {
                     document.getElementById('sectionOrders').classList.remove('hidden');
-                    document.getElementById('sectionTopup').classList.add('hidden');
                     document.getElementById('btnTabOrders').className = 'text-amber-400 border-b-2 border-amber-400 pb-2';
-                    document.getElementById('btnTabTopup').className = 'text-slate-400 pb-2';
+                } else if(sec === 'lockArea') {
+                    document.getElementById('sectionLockArea').classList.remove('hidden');
+                    document.getElementById('btnTabLock').className = 'text-amber-400 border-b-2 border-amber-400 pb-2';
                 } else {
                     document.getElementById('sectionTopup').classList.remove('hidden');
-                    document.getElementById('sectionOrders').classList.add('hidden');
                     document.getElementById('btnTabTopup').className = 'text-amber-400 border-b-2 border-amber-400 pb-2';
-                    document.getElementById('btnTabOrders').className = 'text-slate-400 pb-2';
+                }
+            }
+
+            async function lockDistrict(district) {
+                if(currentTech.points < 500) {
+                    alert('點數不足 500 點，請先前往儲值！');
+                    showSection('topup');
+                    return;
+                }
+                if(!confirm(`確認要消耗 500 點卡位【${district}】專屬派工權利嗎？`)) return;
+
+                const res = await fetch('/api/tech/lock_district', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({phone: currentTech.phone, district: district})
+                });
+                const data = await res.json();
+                if(data.success) {
+                    alert(`🎉 恭喜！您已成功卡位【${district}】，該區案件將由您優先承接！`);
+                    syncTechInfo();
+                } else {
+                    alert(data.message || '卡位失敗');
                 }
             }
 
@@ -475,20 +577,23 @@ def tech_app():
                 const list = document.getElementById('ordersList');
                 list.innerHTML = '';
                 if(orders.length === 0) {
-                    list.innerHTML = '<div class="text-center py-10 text-slate-500">目前尚無等待報修的案件</div>';
+                    list.innerHTML = '<div class="text-center py-10 text-slate-500">目前尚無等待派工的修繕案件</div>';
                     return;
                 }
                 orders.forEach(o => {
                     const isTaken = o.status === 'taken';
+                    const isMyDistrict = currentTech.exclusive_district && currentTech.exclusive_district === o.district;
                     list.innerHTML += `
-                        <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="bg-slate-800 p-5 rounded-xl border ${isMyDistrict ? 'border-amber-500 bg-slate-800/90' : 'border-slate-700'} flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div class="space-y-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs px-2 py-0.5 rounded font-bold">${o.category}</span>
+                                    <span class="bg-blue-600/30 text-blue-400 text-xs px-2 py-0.5 rounded font-bold">${o.category}</span>
+                                    <span class="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded font-bold">📍 ${o.district || '雙北區'}</span>
+                                    ${isMyDistrict ? '<span class="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">👑 您卡位的專屬區域</span>' : ''}
                                     <span class="text-slate-400 text-xs">${o.created_at}</span>
                                 </div>
                                 <h4 class="text-lg font-bold text-white">${o.description}</h4>
-                                <div class="text-sm text-slate-300">地點：${o.address} | 預算：<span class="text-amber-400 font-bold">${o.budget || '依現場報價'}</span></div>
+                                <div class="text-sm text-slate-300">地址：${o.address} | 工程預算：<span class="text-amber-400 font-bold">NT$ ${o.budget.toLocaleString()}</span> (含8%監工)</div>
                                 ${isTaken ? `<div class="text-xs text-green-400 mt-1">✓ 由師傅 (${o.taken_by}) 承接 | 客戶電話：${o.phone}</div>` : ''}
                             </div>
                             <div>
@@ -506,7 +611,7 @@ def tech_app():
                     showSection('topup');
                     return;
                 }
-                if(!confirm('確認要扣除 50 點搶接此案件嗎？搶單成功後將立即取得客戶電話。')) return;
+                if(!confirm('確認要扣除 50 點搶接此案件嗎？搶單成功後將立即取得客戶聯絡電話。')) return;
 
                 const res = await fetch('/api/tech/take_order', {
                     method: 'POST',
@@ -515,25 +620,19 @@ def tech_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    alert('🎉 搶單成功！已為您扣除 50 點，請立即致電客戶洽談施工細節！');
-                    currentTech.points = data.points;
-                    renderDashboard();
+                    alert('🎉 搶單成功！已扣除 50 點，請立即致電客戶洽談施工細節！');
+                    syncTechInfo();
                 } else {
                     alert(data.message || '搶單失敗');
                 }
             }
 
-            // 發起綠界線上付款
             async function payECPay(amount, points) {
                 if(!currentTech) return;
                 const res = await fetch('/api/ecpay/create_payment', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        phone: currentTech.phone,
-                        amount: amount,
-                        points: points
-                    })
+                    body: JSON.stringify({phone: currentTech.phone, amount: amount, points: points})
                 });
                 const data = await res.json();
                 if(data.success) {
@@ -570,7 +669,7 @@ def tech_app():
     ''')
 
 # ==========================================
-# 3. 管理者後台 (/admin)
+# 3. 管理者後台 (/admin) - 含 8% 監工費統計
 # ==========================================
 @app.route("/admin")
 def admin_page():
@@ -580,7 +679,7 @@ def admin_page():
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>QT30 平台總後台</title>
+        <title>QT30 營運總控制台</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-gray-100 min-h-screen p-4 md:p-8">
@@ -594,27 +693,33 @@ def admin_page():
             <div class="bg-white p-6 rounded-2xl shadow flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-black text-gray-800">QT30 營運總控制台</h1>
-                    <p class="text-gray-500 text-sm">全站修繕案件派工監控與師傅實名制 KYC 審查</p>
+                    <p class="text-gray-500 text-sm">全站派工・8% 監工收益管理・師傅實名與區域卡位</p>
                 </div>
-                <div class="flex gap-4">
+                <div class="flex gap-3">
                     <button onclick="switchTab('orders')" id="tOrders" class="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm">📋 案件派工管理</button>
-                    <button onclick="switchTab('techs')" id="tTechs" class="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 font-bold text-sm">🛡️ 師傅實名審核</button>
-                    <button onclick="location.reload()" class="px-3 py-2 text-red-500 text-sm">登出後台</button>
+                    <button onclick="switchTab('techs')" id="tTechs" class="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 font-bold text-sm">🛡️ 師傅名單與卡位</button>
+                    <button onclick="location.reload()" class="px-3 py-2 text-red-500 text-sm">登出</button>
                 </div>
             </div>
 
-            <div id="tabOrdersContent" class="bg-white p-6 rounded-2xl shadow">
-                <h3 class="font-bold text-lg mb-4">客戶報修工單紀錄</h3>
+            <!-- 工單記錄 -->
+            <div id="tabOrdersContent" class="bg-white p-6 rounded-2xl shadow space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-lg">修繕工單與 8% 監工收益明細</h3>
+                    <div id="totalFeeBox" class="text-sm font-bold bg-blue-50 text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200">
+                        預計 8% 監工總收益：<span id="totalFeeDisplay" class="font-black text-blue-600">NT$ 0</span>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-50 border-b">
                             <tr>
                                 <th class="p-3">單號</th>
                                 <th class="p-3">客戶姓名</th>
-                                <th class="p-3">聯絡電話</th>
+                                <th class="p-3">地區 / 地址</th>
                                 <th class="p-3">類別</th>
-                                <th class="p-3">修繕地址</th>
-                                <th class="p-3">報價/預算</th>
+                                <th class="p-3">工程預算</th>
+                                <th class="p-3 text-blue-600">8%監工費</th>
                                 <th class="p-3">狀態</th>
                                 <th class="p-3">承接師傅</th>
                             </tr>
@@ -624,21 +729,18 @@ def admin_page():
                 </div>
             </div>
 
+            <!-- 師傅管理 -->
             <div id="tabTechsContent" class="hidden bg-white p-6 rounded-2xl shadow">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="font-bold text-lg">入駐師傅名單與實名審核</h3>
-                    <button onclick="loadTechs()" class="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg border border-blue-200">🔄 重新整理師傅名單</button>
-                </div>
+                <h3 class="font-bold text-lg mb-4">入駐師傅與專屬卡位狀態</h3>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-50 border-b">
                             <tr>
                                 <th class="p-3">師傅姓名</th>
                                 <th class="p-3">手機帳號 / 專長</th>
-                                <th class="p-3">服務地區</th>
+                                <th class="p-3">專屬卡位行政區</th>
                                 <th class="p-3">點數餘額</th>
-                                <th class="p-3">審核狀態</th>
-                                <th class="p-3">審核操作</th>
+                                <th class="p-3">操作</th>
                             </tr>
                         </thead>
                         <tbody id="adminTechsTable"></tbody>
@@ -668,6 +770,7 @@ def admin_page():
                     document.getElementById('tabTechsContent').classList.add('hidden');
                     document.getElementById('tOrders').className = 'px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm';
                     document.getElementById('tTechs').className = 'px-4 py-2 rounded-xl bg-gray-200 text-gray-700 font-bold text-sm';
+                    loadAdminData();
                 } else {
                     document.getElementById('tabTechsContent').classList.remove('hidden');
                     document.getElementById('tabOrdersContent').classList.add('hidden');
@@ -682,20 +785,23 @@ def admin_page():
                 const orders = await res.json();
                 const tbody = document.getElementById('adminOrdersTable');
                 tbody.innerHTML = '';
+                let totalFee = 0;
                 orders.forEach(o => {
+                    totalFee += (o.fee_8pct || 0);
                     tbody.innerHTML += `
                         <tr class="border-b hover:bg-gray-50">
                             <td class="p-3 font-mono text-xs">#${o.id}</td>
-                            <td class="p-3 font-bold">${o.name}</td>
-                            <td class="p-3 font-mono">${o.phone}</td>
+                            <td class="p-3 font-bold">${o.name} <div class="text-xs font-mono text-gray-500">${o.phone}</div></td>
+                            <td class="p-3"><span class="font-bold text-amber-700">${o.district}</span> ${o.address}</td>
                             <td class="p-3"><span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded font-bold">${o.category}</span></td>
-                            <td class="p-3">${o.address}</td>
-                            <td class="p-3 text-amber-600 font-bold">${o.budget || '面議'}</td>
+                            <td class="p-3 font-bold text-gray-800">NT$ ${o.budget.toLocaleString()}</td>
+                            <td class="p-3 font-black text-blue-600 font-mono">NT$ ${(o.fee_8pct||0).toLocaleString()}</td>
                             <td class="p-3">${o.status === 'taken' ? '<span class="text-green-600 font-bold">已接單</span>' : '<span class="text-amber-500 font-bold">待接單</span>'}</td>
-                            <td class="p-3 font-mono">${o.taken_by || '-'}</td>
+                            <td class="p-3 font-mono text-xs">${o.taken_by || '-'}</td>
                         </tr>
                     `;
                 });
+                document.getElementById('totalFeeDisplay').innerText = 'NT$ ' + totalFee.toLocaleString();
             }
 
             async function loadTechs() {
@@ -709,12 +815,13 @@ def admin_page():
                             <td class="p-3 font-bold">${t.name}</td>
                             <td class="p-3">
                                 <div class="font-mono text-xs text-gray-600">${t.phone}</div>
-                                <div class="text-xs text-blue-600">${t.skills || '未填'}</div>
+                                <div class="text-xs text-blue-600">${t.skills || '全項'}</div>
                             </td>
-                            <td class="p-3 text-xs">${t.area || '全區'}</td>
+                            <td class="p-3 font-bold ${t.exclusive_district ? 'text-amber-600' : 'text-gray-400'}">
+                                ${t.exclusive_district ? '👑 ' + t.exclusive_district : '無卡位'}
+                            </td>
                             <td class="p-3 font-black text-amber-600 font-mono">${t.points} 點</td>
-                            <td class="p-3"><span class="text-xs px-2 py-1 rounded font-bold bg-green-100 text-green-700">已通過</span></td>
-                            <td class="p-3"><button onclick="approveTech('${t.phone}', 'rejected')" class="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">✕ 停權</button></td>
+                            <td class="p-3"><button onclick="approveTech('${t.phone}', 'rejected')" class="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">停權</button></td>
                         </tr>
                     `;
                 });
@@ -738,7 +845,7 @@ def admin_page():
     ''', admin_pwd=ADMIN_PASSWORD)
 
 # ==========================================
-# 4. 後端 API 集合
+# 4. 後端 API
 # ==========================================
 
 @app.route("/api/orders", methods=["GET", "POST"])
@@ -749,26 +856,26 @@ def api_orders():
         d = request.json
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         c.execute('''
-            INSERT INTO orders (name, phone, address, category, description, budget, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (d['name'], d['phone'], d['address'], d['category'], d['description'], d.get('budget', ''), now_str))
+            INSERT INTO orders (name, phone, district, address, category, description, budget, fee_8pct, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (d['name'], d['phone'], d.get('district', '雙北區'), d['address'], d['category'], d['description'], int(d.get('budget', 0)), int(d.get('fee_8pct', 0)), now_str))
         order_id = c.lastrowid
         conn.commit()
         conn.close()
 
-        msg = f"🔔 【QT30 新修繕案件通報！】\n單號：#{order_id}\n客戶：{d['name']} ({d['phone']})\n類別：{d['category']}\n地點：{d['address']}\n說明：{d['description']}\n預算：{d.get('budget', '面議')}"
+        msg = f"🔔 【QT30 新修繕案件通報 (含8%監工)】\n單號：#{order_id}\n客戶：{d['name']} ({d['phone']})\n地區：{d.get('district', '')}\n地址：{d['address']}\n類別：{d['category']}\n預算：NT$ {int(d.get('budget', 0)):,}\n預計8%監工收益：NT$ {int(d.get('fee_8pct', 0)):,}"
         send_line_push_message(msg)
         return jsonify({"success": True, "order_id": order_id})
 
-    c.execute("SELECT id, name, phone, address, category, description, budget, status, taken_by, created_at FROM orders ORDER BY id DESC")
+    c.execute("SELECT id, name, phone, district, address, category, description, budget, fee_8pct, status, taken_by, created_at FROM orders ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
     result = []
     for r in rows:
         result.append({
-            "id": r[0], "name": r[1], "phone": r[2], "address": r[3],
-            "category": r[4], "description": r[5], "budget": r[6],
-            "status": r[7], "taken_by": r[8], "created_at": r[9]
+            "id": r[0], "name": r[1], "phone": r[2], "district": r[3],
+            "address": r[4], "category": r[5], "description": r[6],
+            "budget": r[7], "fee_8pct": r[8], "status": r[9], "taken_by": r[10], "created_at": r[11]
         })
     return jsonify(result)
 
@@ -787,12 +894,12 @@ def api_tech_register():
         conn.commit()
         conn.close()
 
-        msg = f"🛡️ 【QT30 新師傅入駐完成】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}"
+        msg = f"🛡️ 【QT30 新師傅入駐完成】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}"
         send_line_push_message(msg)
         
         tech_obj = {
             "phone": phone, "name": d['name'], "skills": d.get('skills', ''),
-            "area": d.get('area', ''), "points": 100, "status": "approved"
+            "area": d.get('area', ''), "exclusive_district": "", "points": 100, "status": "approved"
         }
         return jsonify({"success": True, "tech": tech_obj})
     except sqlite3.IntegrityError:
@@ -805,7 +912,7 @@ def api_tech_login():
     phone = d['phone'].strip()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT phone, name, skills, area, points, status FROM technicians WHERE phone=? AND password=?", (phone, d['password']))
+    c.execute("SELECT phone, name, skills, area, exclusive_district, points, status FROM technicians WHERE phone=? AND password=?", (phone, d['password']))
     row = c.fetchone()
     conn.close()
     if row:
@@ -813,7 +920,7 @@ def api_tech_login():
             "success": True,
             "tech": {
                 "phone": row[0], "name": row[1], "skills": row[2],
-                "area": row[3], "points": row[4], "status": row[5]
+                "area": row[3], "exclusive_district": row[4], "points": row[5], "status": row[6]
             }
         })
     return jsonify({"success": False, "message": "帳號或密碼錯誤！"})
@@ -823,7 +930,7 @@ def api_tech_info():
     phone = request.args.get("phone", "").strip()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT phone, name, skills, area, points, status FROM technicians WHERE phone=?", (phone,))
+    c.execute("SELECT phone, name, skills, area, exclusive_district, points, status FROM technicians WHERE phone=?", (phone,))
     row = c.fetchone()
     conn.close()
     if row:
@@ -831,10 +938,30 @@ def api_tech_info():
             "success": True,
             "tech": {
                 "phone": row[0], "name": row[1], "skills": row[2],
-                "area": row[3], "points": row[4], "status": row[5]
+                "area": row[3], "exclusive_district": row[4], "points": row[5], "status": row[6]
             }
         })
     return jsonify({"success": False})
+
+@app.route("/api/tech/lock_district", methods=["POST"])
+def api_tech_lock_district():
+    d = request.json
+    phone = d['phone']
+    district = d['district']
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT points, name FROM technicians WHERE phone=?", (phone,))
+    t = c.fetchone()
+    if not t or t[0] < 500:
+        conn.close()
+        return jsonify({"success": False, "message": "點數不足 500 點！"})
+
+    c.execute("UPDATE technicians SET points = points - 500, exclusive_district=? WHERE phone=?", (district, phone))
+    conn.commit()
+    conn.close()
+
+    send_line_push_message(f"👑 【QT30 師傅地區專屬卡位！】\n師傅：{t[1]} ({phone})\n卡位行政區：{district}\n已扣除 500 點卡位費。")
+    return jsonify({"success": True})
 
 @app.route("/api/tech/take_order", methods=["POST"])
 def api_tech_take_order():
@@ -844,7 +971,7 @@ def api_tech_take_order():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    c.execute("SELECT name, points, status FROM technicians WHERE phone=?", (phone,))
+    c.execute("SELECT name, points, exclusive_district FROM technicians WHERE phone=?", (phone,))
     t = c.fetchone()
     if not t:
         conn.close()
@@ -853,7 +980,7 @@ def api_tech_take_order():
         conn.close()
         return jsonify({"success": False, "message": "點數不足 50 點！"})
 
-    c.execute("SELECT status, name, phone, address FROM orders WHERE id=?", (order_id,))
+    c.execute("SELECT status, name, phone, district FROM orders WHERE id=?", (order_id,))
     o = c.fetchone()
     if not o or o[0] == 'taken':
         conn.close()
@@ -865,11 +992,11 @@ def api_tech_take_order():
     conn.commit()
     conn.close()
 
-    send_line_push_message(f"⚡ 【QT30 案件已被搶接！】\n單號：#{order_id}\n接單師傅：{t[0]} ({phone})\n師傅剩餘點數：{new_points} 點")
+    send_line_push_message(f"⚡ 【QT30 案件已被搶接！】\n單號：#{order_id}\n地區：{o[3]}\n接單師傅：{t[0]} ({phone})\n師傅剩餘點數：{new_points} 點")
     return jsonify({"success": True, "points": new_points})
 
 # ==========================================
-# 5. 綠界金流串接核心 (/api/ecpay/...)
+# 5. 綠界金流串接核心
 # ==========================================
 
 @app.route("/api/ecpay/create_payment", methods=["POST"])
@@ -924,7 +1051,7 @@ def api_ecpay_callback():
     return "1|OK"
 
 # ==========================================
-# 6. 管理者審核 API
+# 6. 管理者 API
 # ==========================================
 @app.route("/api/admin/techs")
 def api_admin_techs():
@@ -933,10 +1060,10 @@ def api_admin_techs():
         return jsonify([])
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT name, phone, skills, area, points, status FROM technicians ORDER BY id DESC")
+    c.execute("SELECT name, phone, skills, area, exclusive_district, points, status FROM technicians ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
-    return jsonify([{"name": r[0], "phone": r[1], "skills": r[2], "area": r[3], "points": r[4], "status": r[5]} for r in rows])
+    return jsonify([{"name": r[0], "phone": r[1], "skills": r[2], "area": r[3], "exclusive_district": r[4], "points": r[5], "status": r[6]} for r in rows])
 
 @app.route("/api/admin/approve_tech", methods=["POST"])
 def api_admin_approve():
@@ -952,9 +1079,6 @@ def api_admin_approve():
     conn.close()
     return jsonify({"success": True})
 
-# ==========================================
-# 啟動應用
-# ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
