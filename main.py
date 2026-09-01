@@ -3,14 +3,15 @@ import time
 import urllib.parse
 import hashlib
 import requests
+import sqlite3
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 房屋修繕派工接單平台 (正式營運版)")
+app = FastAPI(title="QT30 房屋修繕派工平台 (SQLite永久資料庫版)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +20,71 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- 資料庫初始化 ---
+DB_PATH = "qt30_database.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # 案件資料表
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS cases (
+        id TEXT PRIMARY KEY,
+        trade_no TEXT UNIQUE,
+        client_name TEXT,
+        client_phone TEXT,
+        address TEXT,
+        item TEXT,
+        description TEXT,
+        deposit_amount INTEGER,
+        photo TEXT,
+        status TEXT,
+        technician TEXT,
+        payment_status TEXT,
+        created_at TEXT
+    )
+    """)
+    # 師傅卡位服務區表
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS spots (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        lat REAL,
+        lng REAL,
+        radius_km INTEGER,
+        technician_name TEXT
+    )
+    """)
+    # 師傅帳號與點數表
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS technicians (
+        phone TEXT PRIMARY KEY,
+        name TEXT,
+        points INTEGER
+    )
+    """)
+    # 預設師傅與預設示範據點
+    cursor.execute("INSERT OR IGNORE INTO technicians (phone, name, points) VALUES ('0912345678', '王師傅 (北部水電)', 800)")
+    
+    cursor.execute("SELECT COUNT(*) FROM spots")
+    if cursor.fetchone()[0] == 0:
+        default_spots = [
+            ("spot-1", "淡海新市鎮特區", 25.1956, 121.4398, 5, "王師傅 (北部水電)"),
+            ("spot-2", "林口三井生活圈", 25.0712, 121.3658, 6, "張師傅 (泥作防水)"),
+            ("spot-3", "竹北高鐵特區", 24.8085, 121.0402, 8, "李師傅 (冷氣空調)")
+        ]
+        cursor.executemany("INSERT INTO spots (id, name, lat, lng, radius_km, technician_name) VALUES (?, ?, ?, ?, ?, ?)", default_spots)
+
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 # LINE 金鑰
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
@@ -86,56 +152,108 @@ class CustomSpotCreate(BaseModel):
     lat: float
     lng: float
     radiusKm: Optional[int] = 5
-    technicianName: Optional[str] = "王師傅"
-
-cases_db = []
-spots_db = [
-    {"id": "spot-1", "name": "淡海新市鎮特區", "lat": 25.1956, "lng": 121.4398, "radiusKm": 5, "technicianName": "王師傅 (北部水電)"},
-    {"id": "spot-2", "name": "林口三井遠雄生活圈", "lat": 25.0712, "lng": 121.3658, "radiusKm": 6, "technicianName": "張師傅 (泥作防水)"},
-    {"id": "spot-3", "name": "竹北高鐵特區", "lat": 24.8085, "lng": 121.0402, "radiusKm": 8, "technicianName": "李師傅 (冷氣空調)"}
-]
+    technicianName: Optional[str] = "王師傅 (北部水電)"
 
 @app.post("/api/cases")
 def create_case(data: CaseCreate):
     timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
     trade_no = f"QT{timestamp_str[-10:]}{int(time.time()*1000)%1000:03d}"
     case_id = f"CASE-{trade_no[-6:]}"
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    new_case = {
-        "id": case_id,
-        "tradeNo": trade_no,
-        "status": "待派工",
-        "technician": "未指派",
-        "paymentStatus": "未收款",
-        "depositAmount": data.depositAmount or 500,
-        "photo": data.photo,
-        "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        **data.dict()
-    }
-    cases_db.insert(0, new_case)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO cases (id, trade_no, client_name, client_phone, address, item, description, deposit_amount, photo, status, technician, payment_status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '待派工', '未指派', '未收款', ?)
+    """, (case_id, trade_no, data.clientName, data.clientPhone, data.address, data.item, data.description, data.depositAmount or 500, data.photo, created_at))
+    conn.commit()
+    conn.close()
 
     photo_tag = "📷 【已附現場照片】" if data.photo else "📷 【未附現場照片】"
 
     msg = (
         f"🔔 【QT30 新進預約報修單】\n"
         f"------------------------\n"
-        f"📌 案件編號：{new_case['id']}\n"
-        f"👤 客戶姓名：{new_case['clientName']}\n"
-        f"📞 聯絡電話：{new_case['clientPhone']}\n"
-        f"📍 修繕地址：{new_case['address']}\n"
-        f"🔧 報修項目：{new_case['item']}\n"
-        f"💰 客戶預算：NT$ {new_case['depositAmount']}\n"
-        f"📝 狀況描述：{new_case['description']}\n"
+        f"📌 案件編號：{case_id}\n"
+        f"👤 客戶姓名：{data.clientName}\n"
+        f"📞 聯絡電話：{data.clientPhone}\n"
+        f"📍 修繕地址：{data.address}\n"
+        f"🔧 報修項目：{data.item}\n"
+        f"💰 客戶預算：NT$ {data.depositAmount}\n"
+        f"📝 狀況描述：{data.description}\n"
         f"{photo_tag}\n"
         f"------------------------\n"
-        f"⚡ 請儘速聯繫客戶，確認後可至後台發送付款連結！"
+        f"⚡ 資料已存入永久資料庫，可至後台確認！"
     )
     send_line_notification(msg)
-    return {"success": True, "case": new_case}
+    return {"success": True, "case": {"id": case_id, "tradeNo": trade_no, "depositAmount": data.depositAmount}}
+
+@app.get("/api/cases")
+def get_cases():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM cases ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    cases = []
+    for r in rows:
+        cases.append({
+            "id": r["id"],
+            "tradeNo": r["trade_no"],
+            "clientName": r["client_name"],
+            "clientPhone": r["client_phone"],
+            "address": r["address"],
+            "item": r["item"],
+            "description": r["description"],
+            "depositAmount": r["deposit_amount"],
+            "photo": r["photo"],
+            "status": r["status"],
+            "technician": r["technician"],
+            "paymentStatus": r["payment_status"],
+            "createdAt": r["created_at"]
+        })
+    conn.close()
+    return {"success": True, "cases": cases}
+
+@app.patch("/api/cases/{case_id}")
+def update_case(case_id: str, data: CaseUpdate):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    updates = []
+    params = []
+    if data.status is not None:
+        updates.append("status = ?")
+        params.append(data.status)
+    if data.technician is not None:
+        updates.append("technician = ?")
+        params.append(data.technician)
+    if data.depositAmount is not None:
+        updates.append("deposit_amount = ?")
+        params.append(data.depositAmount)
+    if data.paymentStatus is not None:
+        updates.append("payment_status = ?")
+        params.append(data.paymentStatus)
+        
+    if not updates:
+        conn.close()
+        return {"success": True}
+        
+    params.append(case_id)
+    query = f"UPDATE cases SET {', '.join(updates)} WHERE id = ?"
+    cursor.execute(query, params)
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 @app.get("/api/pay/{case_id}", response_class=HTMLResponse)
 def get_payment_page(case_id: str, request: Request):
-    target = next((c for c in cases_db if c["id"] == case_id), None)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    target = cursor.fetchone()
+    conn.close()
+
     if not target:
         raise HTTPException(status_code=404, detail="找不到案件")
 
@@ -144,10 +262,10 @@ def get_payment_page(case_id: str, request: Request):
 
     params = {
         "MerchantID": ECPAY_MERCHANT_ID,
-        "MerchantTradeNo": target["tradeNo"],
+        "MerchantTradeNo": target["trade_no"],
         "MerchantTradeDate": trade_date,
         "PaymentType": "aio",
-        "TotalAmount": str(target["depositAmount"]),
+        "TotalAmount": str(target["deposit_amount"]),
         "TradeDesc": ecpay_url_encode("QT30維修工程款"),
         "ItemName": f"{target['item']} 修繕款項",
         "ReturnURL": f"{base_url}/api/ecpay/callback",
@@ -167,7 +285,7 @@ def get_payment_page(case_id: str, request: Request):
     <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f8fafc;">
         <div style="text-align:center;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
             <h2 style="color:#0284c7;">正在前往綠界官方安全收銀台...</h2>
-            <p>案件編號：<b>{target['id']}</b> | 應付金額：<b>NT$ {target['depositAmount']}</b></p>
+            <p>案件編號：<b>{target['id']}</b> | 應付金額：<b>NT$ {target['deposit_amount']}</b></p>
             <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
                 {inputs_html}
             </form>
@@ -185,59 +303,49 @@ async def ecpay_callback(request: Request):
     rtn_code = data.get("RtnCode")
 
     if rtn_code == "1":
-        for c in cases_db:
-            if c["tradeNo"] == trade_no:
-                c["paymentStatus"] = "已付款"
-                msg = (
-                    f"🎉 【QT30 款項已成功入帳！】\n"
-                    f"------------------------\n"
-                    f"📌 案件編號：{c['id']}\n"
-                    f"👤 客戶：{c['clientName']}\n"
-                    f"💰 入帳金額：NT$ {c['depositAmount']}\n"
-                    f"💳 付款狀態：綠界扣款成功\n"
-                    f"------------------------\n"
-                    f"款項已入帳，請安排師傅前往施工！"
-                )
-                send_line_notification(msg)
-                break
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE cases SET payment_status = '已付款' WHERE trade_no = ?", (trade_no,))
+        cursor.execute("SELECT * FROM cases WHERE trade_no = ?", (trade_no,))
+        c = cursor.fetchone()
+        conn.commit()
+        conn.close()
+
+        if c:
+            msg = (
+                f"🎉 【QT30 款項已成功入帳！】\n"
+                f"------------------------\n"
+                f"📌 案件編號：{c['id']}\n"
+                f"👤 客戶：{c['client_name']}\n"
+                f"💰 入帳金額：NT$ {c['deposit_amount']}\n"
+                f"💳 付款狀態：綠界扣款成功\n"
+                f"------------------------\n"
+                f"款項已入帳，請安排師傅前往施工！"
+            )
+            send_line_notification(msg)
     return "1|OK"
 
-@app.get("/api/cases")
-def get_cases():
-    return {"success": True, "cases": cases_db}
-
-@app.patch("/api/cases/{case_id}")
-def update_case(case_id: str, data: CaseUpdate):
-    for c in cases_db:
-        if c["id"] == case_id:
-            if data.status is not None:
-                c["status"] = data.status
-            if data.technician is not None:
-                c["technician"] = data.technician
-            if data.depositAmount is not None:
-                c["depositAmount"] = data.depositAmount
-            if data.paymentStatus is not None:
-                c["paymentStatus"] = data.paymentStatus
-            return {"success": True, "case": c}
-    raise HTTPException(status_code=404, detail="找不到案件")
-
-# --- 師傅卡位 API ---
+# --- 師傅據點與點數 API ---
 @app.get("/api/spots")
 def get_spots():
-    return {"success": True, "spots": spots_db}
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM spots")
+    rows = cursor.fetchall()
+    spots = [{"id": r["id"], "name": r["name"], "lat": r["lat"], "lng": r["lng"], "radiusKm": r["radius_km"], "technicianName": r["technician_name"]} for r in rows]
+    conn.close()
+    return {"success": True, "spots": spots}
 
 @app.post("/api/spots")
 def create_spot(spot: CustomSpotCreate):
-    new_spot = {
-        "id": f"spot-{int(time.time()*1000)%10000}",
-        "name": spot.name,
-        "lat": spot.lat,
-        "lng": spot.lng,
-        "radiusKm": spot.radiusKm,
-        "technicianName": spot.technicianName
-    }
-    spots_db.append(new_spot)
-    return {"success": True, "spot": new_spot}
+    conn = get_db()
+    cursor = conn.cursor()
+    new_id = f"spot-{int(time.time()*1000)%10000}"
+    cursor.execute("INSERT INTO spots (id, name, lat, lng, radius_km, technician_name) VALUES (?, ?, ?, ?, ?, ?)",
+                   (new_id, spot.name, spot.lat, spot.lng, spot.radiusKm, spot.technicianName))
+    conn.commit()
+    conn.close()
+    return {"success": True, "spot": {"id": new_id, "name": spot.name, "lat": spot.lat, "lng": spot.lng, "radiusKm": spot.radiusKm, "technicianName": spot.technicianName}}
 
 # --- 客戶發案頁面 (/app) ---
 @app.get("/app", response_class=HTMLResponse)
@@ -372,7 +480,7 @@ def serve_app_page():
     </html>
     """
 
-# --- 師傅端工作台 (/tech) 支援地圖點選 + 自訂服務區卡位 ---
+# --- 師傅端工作台 (/tech) ---
 @app.get("/tech", response_class=HTMLResponse)
 def serve_tech_page():
     return """
@@ -387,7 +495,6 @@ def serve_tech_page():
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     </head>
     <body class="bg-slate-900 text-slate-100 min-h-screen">
-      <!-- 頂部導航 -->
       <header class="bg-slate-800 border-b border-slate-700 p-4 px-6 flex flex-wrap justify-between items-center gap-4">
         <div>
           <div class="text-xs text-slate-400 font-semibold tracking-wide">QT30 全國師傅工作台</div>
@@ -408,7 +515,6 @@ def serve_tech_page():
       </header>
 
       <main class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-        <!-- 說明橫幅 -->
         <div class="bg-gradient-to-r from-blue-900 to-indigo-900 border border-blue-700/50 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-lg">
           <div>
             <h2 class="text-base font-bold text-white flex items-center gap-2">
@@ -421,16 +527,14 @@ def serve_tech_page():
           </button>
         </div>
 
-        <!-- 地圖與自訂區塊 -->
         <div class="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden shadow-md">
           <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
             <span class="text-sm font-bold text-slate-200">🗺️ 服務範圍地圖（點擊地圖即可直接設定新據點）</span>
-            <span class="text-xs text-slate-400">已卡位據點以藍色標記顯示</span>
+            <span class="text-xs text-slate-400">資料已由 SQLite 永久保存</span>
           </div>
           <div id="map" class="h-[450px] w-full bg-slate-950"></div>
         </div>
 
-        <!-- 已卡位地區列表 -->
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-md">
           <h3 class="text-sm font-bold text-slate-200 mb-3">📋 目前專屬卡位與服務據點一覽</h3>
           <div id="spotList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -439,7 +543,6 @@ def serve_tech_page():
         </div>
       </main>
 
-      <!-- 新增據點彈窗 -->
       <div id="addSpotModal" class="hidden fixed inset-0 bg-black/70 flex justify-center items-center z-50 p-4">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4">
           <h3 class="text-lg font-bold text-white">📍 新增自訂服務地區 / 卡位</h3>
@@ -483,7 +586,6 @@ def serve_tech_page():
             attribution: '© OpenStreetMap'
           }).addTo(map);
 
-          // 點擊地圖快速選取座標
           map.on('click', function(e) {
             document.getElementById('newSpotLat').value = e.latlng.lat.toFixed(4);
             document.getElementById('newSpotLng').value = e.latlng.lng.toFixed(4);
@@ -560,7 +662,7 @@ def serve_tech_page():
             });
             const data = await res.json();
             if (data.success) {
-              alert('🎉 成功卡位並新增服務地區：' + name);
+              alert('🎉 成功卡位並儲存至資料庫：' + name);
               document.getElementById('addSpotModal').classList.add('hidden');
               document.getElementById('newSpotName').value = '';
               loadSpots();
@@ -593,7 +695,7 @@ def serve_admin_page():
         <header class="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm gap-4">
           <div>
             <h1 class="text-2xl font-black text-slate-800">QT30 派工管理後台</h1>
-            <p class="text-sm text-slate-500 mt-1">掌握案件、照片、修改金額與發送專屬收款連結</p>
+            <p class="text-sm text-slate-500 mt-1">SQLite 資料庫永久保存案件、照片與金流狀態</p>
           </div>
           <button onclick="loadCases()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow transition">
             🔄 重新整理清單
@@ -646,7 +748,7 @@ def serve_admin_page():
             const res = await fetch('/api/cases');
             const data = await res.json();
             if (!data.cases || data.cases.length === 0) {
-              tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400">目前尚無案件</td></tr>';
+              tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-slate-400">目前資料庫尚無案件</td></tr>';
               return;
             }
             tbody.innerHTML = data.cases.map(c => `
@@ -716,7 +818,7 @@ def serve_admin_page():
             });
             const data = await res.json();
             if (data.success) {
-              alert('案件 ' + id + ' 已成功更新金額與指派！');
+              alert('案件 ' + id + ' 資料已更新至資料庫！');
               loadCases();
             }
           } catch(e) {
