@@ -42,6 +42,7 @@ def init_db():
             category TEXT,
             description TEXT,
             budget INTEGER DEFAULT 0,
+            need_supervision INTEGER DEFAULT 0,
             fee_8pct INTEGER DEFAULT 0,
             ref_tech_code TEXT DEFAULT '',
             status TEXT DEFAULT 'bidding',
@@ -53,6 +54,11 @@ def init_db():
             created_at TEXT
         )
     ''')
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN need_supervision INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
     # 報價/競標表記錄 (盲標)
     c.execute('''
         CREATE TABLE IF NOT EXISTS bids (
@@ -167,8 +173,8 @@ def home():
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>QT30 房屋修繕平台｜破除黑箱・透明競標・8%專業監工</title>
-        <meta name="description" content="QT30 涵蓋拆除、水電、泥作、木工、系統櫃、抓漏、屋頂防水、外牆防水、老屋翻新、衛浴、冷氣、氣密窗、搬家等20大專業工種。AI智慧發案、透明暗標競價與8%官方專案代管！">
+        <title>QT30 房屋修繕平台｜破除黑箱・透明競標・選配8%專業監工</title>
+        <meta name="description" content="QT30 涵蓋拆除、水電、泥作、木工、抓漏防水、老屋翻新等20大專業工種。免費發案、多方師傅暗標競價、可選配8%官方專案監工保障！">
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-50 text-slate-800">
@@ -176,26 +182,26 @@ def home():
             <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="text-2xl font-black text-blue-600">QT30</span>
-                    <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">全工種透明修繕代管</span>
+                    <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">全工種透明修繕平台</span>
                 </div>
                 <div class="flex gap-3">
                     <a href="/tech" class="text-sm font-bold text-slate-600 hover:text-blue-600 px-3 py-2">師傅接單工作台</a>
-                    <a href="/app" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition">我要發案報修</a>
+                    <a href="/app" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition">免費發案報修</a>
                 </div>
             </div>
         </header>
 
         <section class="py-16 px-4 bg-gradient-to-b from-blue-50 to-white text-center">
             <div class="max-w-3xl mx-auto space-y-6">
-                <span class="inline-block bg-amber-100 text-amber-800 text-xs font-black px-3 py-1 rounded-full">🛡️ 20+ 專業工種・拒絕裝修黑箱</span>
+                <span class="inline-block bg-green-100 text-green-800 text-xs font-black px-3 py-1 rounded-full">✨ 業主發案完全免費 ✕ 自由選配官方監工</span>
                 <h1 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-tight">
-                    房屋修繕，不再任人喊價。<br><span class="text-blue-600">AI 智慧發案 ✕ 師傅競標 ✕ 8% 監工把關</span>
+                    房屋修繕，不再任人喊價。<br><span class="text-blue-600">AI 智慧填單 ✕ 多方透明競價 ✕ 安心代管</span>
                 </h1>
                 <p class="text-slate-600 text-base md:text-lg">
-                    拆除、水電、泥作、木工、系統櫃、抓漏防水、老屋翻新、氣密窗一應俱全。多位認證師傅透明報價，官方 8% 專案代管驗收！
+                    拆除、水電、泥作、木工、抓漏防水、老屋翻新、氣密窗。線上免費發案，多位認證師傅透明報價，成交後可選配 8% 官方專案監工驗收！
                 </p>
                 <div class="flex flex-col sm:flex-row justify-center gap-4 pt-4">
-                    <a href="/app" class="bg-blue-600 hover:bg-blue-700 text-white font-black text-lg px-8 py-4 rounded-2xl shadow-lg hover:shadow-xl transition">🚀 立即線上發案 (AI 一鍵填單)</a>
+                    <a href="/app" class="bg-blue-600 hover:bg-blue-700 text-white font-black text-lg px-8 py-4 rounded-2xl shadow-lg hover:shadow-xl transition">🚀 立即免費發案 (AI 一鍵填單)</a>
                     <a href="/tech" class="bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold text-lg px-8 py-4 rounded-2xl transition">🛠️ 專業師傅入駐接單</a>
                 </div>
             </div>
@@ -236,7 +242,7 @@ def home():
     ''')
 
 # ==========================================
-# 1. 客戶端預約報修 (/app) - 20+ 工種 + AI 一鍵範本 + 地圖
+# 1. 客戶端預約報修 (/app) - 免費發案 + 選配8%監工
 # ==========================================
 @app.route("/app")
 def client_app():
@@ -247,8 +253,8 @@ def client_app():
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         
-        <title>淡水房屋修繕推薦｜QT30 雙北居家裝修・20大專業工種・8%透明監工</title>
-        <meta name="description" content="QT30 提供淡水及雙北地區專業房屋修繕、拆除、水電、泥作、木工、系統櫃、抓漏防水、老屋翻新、衛浴、冷氣、氣密窗等20大工種。透明報價、專人監工、師傅即時競價！">
+        <title>淡水房屋修繕推薦｜QT30 免費發案・20大工種師傅競價・選配專業監工</title>
+        <meta name="description" content="QT30 提供淡水及雙北地區免費發案報修。水電、泥作、防水抓漏、老屋翻新、氣密窗等20大工種認證師傅暗標競價，可選配8%官方專案代管！">
         <meta name="keywords" content="淡水房屋修繕, 淡水水電維修, 淡水抓漏, 雙北老屋翻新, 氣密窗, 拆除泥作, 系統櫃木工, 屋頂外牆防水, QT30">
         <meta name="robots" content="index, follow">
         <link rel="canonical" href="https://qt30home.com/app">
@@ -264,13 +270,13 @@ def client_app():
           "@type": "HomeAndConstructionBusiness",
           "name": "QT30 房屋修繕平台",
           "url": "https://qt30home.com/app",
-          "description": "雙北及淡水地區20大專業工種房屋修繕、統包裝潢與8%監工代管服務",
+          "description": "雙北及淡水地區20大專業工種免費發案報修與選配監工服務",
           "areaServed": [
             {"@type": "AdministrativeArea", "name": "淡水區"},
             {"@type": "AdministrativeArea", "name": "新北市"},
             {"@type": "AdministrativeArea", "name": "台北市"}
           ],
-          "priceRange": "$$"
+          "priceRange": "$"
         }
         </script>
 
@@ -282,8 +288,8 @@ def client_app():
     <body class="bg-gray-100 min-h-screen flex items-center justify-center p-3">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl overflow-hidden my-4">
             <div class="bg-blue-600 p-5 text-white text-center">
-                <h1 class="text-2xl font-black">QT30 房屋修繕透明發案</h1>
-                <p class="text-blue-100 text-xs mt-1">20大專業工種・AI 輔助發案・多師傅暗標競價・8% 官方監工代管</p>
+                <h1 class="text-2xl font-black">QT30 房屋修繕免費發案</h1>
+                <p class="text-blue-100 text-xs mt-1">20大專業工種・AI 輔助發案・多師傅競價・成交可選配官方監工</p>
             </div>
             
             <form id="orderForm" class="p-6 space-y-4">
@@ -344,7 +350,7 @@ def client_app():
 
                 <!-- 20+ 工種詳細下拉選單 -->
                 <div>
-                    <label class="block text-xs font-bold text-gray-700">修繕/裝修工種項目 (至少 20 項)</label>
+                    <label class="block text-xs font-bold text-gray-700">修繕/裝修工種項目 (20 大工種)</label>
                     <select id="category" class="w-full mt-1 p-2.5 border rounded-xl font-bold bg-white text-slate-800">
                         <option value="拆除工程">🔨 拆除工程（打牆、舊裝潢拆除、廢棄物清運）</option>
                         <option value="水電工程" selected>⚡ 水電工程（線路重拉、配電盤、衛浴安裝更換）</option>
@@ -370,7 +376,7 @@ def client_app():
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold text-gray-700">修繕需求說明 (可由 AI 範本自動填入)</label>
+                    <label class="block text-xs font-bold text-gray-700">修繕需求說明</label>
                     <textarea id="description" rows="3" required placeholder="請簡單說明施工範圍、屋況或具體需求..." class="w-full mt-1 p-2.5 border rounded-xl text-xs"></textarea>
                 </div>
 
@@ -385,35 +391,27 @@ def client_app():
                     </div>
                 </div>
 
-                <!-- 8% 監工條款 -->
-                <div class="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-2">
-                    <div class="flex justify-between items-center text-xs">
-                        <span class="font-bold text-blue-900">🛡️ 平台專案代管暨 8% 監工服務費：</span>
-                        <span class="font-black text-blue-700 text-sm" id="feeDisplay">NT$ 0</span>
-                    </div>
-                    <p class="text-[11px] text-gray-600 leading-tight">含：施工進度回傳、施工照片存證、行政驗收協調。</p>
-                    <div class="flex items-start gap-2 pt-2 border-t border-blue-200">
-                        <input type="checkbox" id="agreeTerm" required class="mt-0.5 rounded text-blue-600">
-                        <label for="agreeTerm" class="text-[11px] text-gray-700 leading-tight">
-                            我已閱讀並同意 <a href="javascript:void(0)" onclick="openModal()" class="text-blue-600 font-bold underline">《QT30 工程代管服務協議與免責聲明》</a>。
-                        </label>
+                <!-- 8% 監工選配區塊（自由勾選/成交可選，不強制） -->
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 space-y-2">
+                    <div class="flex items-start gap-2.5">
+                        <input type="checkbox" id="needSupervision" onchange="calcFee()" class="mt-1 h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500">
+                        <div>
+                            <label for="needSupervision" class="text-xs font-bold text-emerald-900 cursor-pointer">
+                                🛡️ 加選【官方 8% 專案代管暨監工驗收保障】（選填，成交後亦可加購）
+                            </label>
+                            <p class="text-[11px] text-emerald-700 mt-0.5 leading-tight">
+                                含：官方進度照片存證、款項代管、完工驗收協調。預估服務費：<span id="feeDisplay" class="font-black text-emerald-800">NT$ 0</span>
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow transition">🚀 送出發案（開放專業師傅競價）</button>
+                <div class="text-[11px] text-gray-500 flex items-center gap-1">
+                    <span>💡 發案完全免費，送出後多位專業師傅將主動與您聯繫現勘評估。</span>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow transition">🚀 免費送出發案（開放專業師傅競價）</button>
             </form>
-        </div>
-
-        <!-- 協議彈窗 -->
-        <div id="termModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-                <h3 class="text-lg font-black text-gray-900 border-b pb-2">QT30 工程代管服務協議與免責聲明</h3>
-                <div class="text-xs text-gray-600 space-y-2 leading-relaxed">
-                    <p><strong>一、 服務性質界定：</strong>本平台所提供之「8% 監工/專案代管服務」，性質僅限於施工進度協調、工程款項託管、施工照片存證及完工行政驗收媒合，非屬法定建築法、民法委任承攬或工程技術法規之實質現場技術監督。</p>
-                    <p><strong>二、 完全排除監督與過失責任：</strong>本平台及營運團隊不具備實體指揮監督權限，亦不承擔任何現場安全管理、施工品質保證或過失監督責任。凡因施工瑕疵、工安意外、第三人損害等，概由獨立承攬施作之入駐師傅承擔責任。</p>
-                </div>
-                <button onclick="closeModal()" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-xl">我已了解並同意</button>
-            </div>
         </div>
 
         <script>
@@ -498,18 +496,15 @@ def client_app():
 
             function calcFee() {
                 const b = parseFloat(document.getElementById('budget').value) || 0;
-                document.getElementById('feeDisplay').innerText = 'NT$ ' + Math.round(b * 0.08).toLocaleString();
+                const isNeed = document.getElementById('needSupervision').checked;
+                const fee = isNeed ? Math.round(b * 0.08) : 0;
+                document.getElementById('feeDisplay').innerText = 'NT$ ' + fee.toLocaleString() + (isNeed ? '' : ' (未加選)');
             }
-            function openModal(){ document.getElementById('termModal').classList.remove('hidden'); }
-            function closeModal(){ document.getElementById('termModal').classList.add('hidden'); document.getElementById('agreeTerm').checked = true; }
 
             document.getElementById('orderForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
-                if(!document.getElementById('agreeTerm').checked) {
-                    alert('請先勾選同意服務協議！');
-                    return;
-                }
                 const b = parseFloat(document.getElementById('budget').value) || 0;
+                const isNeed = document.getElementById('needSupervision').checked ? 1 : 0;
                 const payload = {
                     name: document.getElementById('name').value,
                     phone: document.getElementById('phone').value,
@@ -521,7 +516,8 @@ def client_app():
                     description: document.getElementById('description').value,
                     ref_tech_code: document.getElementById('refTechCode').value.trim(),
                     budget: b,
-                    fee_8pct: Math.round(b * 0.08)
+                    need_supervision: isNeed,
+                    fee_8pct: isNeed ? Math.round(b * 0.08) : 0
                 };
                 const res = await fetch('/api/orders', {
                     method: 'POST',
@@ -530,7 +526,7 @@ def client_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    alert('🎉 報修發案成功！已開放該工種認證師傅進入暗標競價與現勘評估。');
+                    alert('🎉 報修發案成功！已為您開放專業認證師傅暗標競價與現場勘估。');
                     document.getElementById('orderForm').reset();
                     calcFee();
                 } else {
@@ -543,7 +539,7 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅端工作台 (/tech) - 20+ 工種篩選 + 盲標競價
+# 2. 師傅端工作台 (/tech)
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
@@ -664,7 +660,7 @@ def tech_app():
                 <button onclick="showSection('topup')" id="btnTabTopup" class="text-slate-400 pb-2">💎 線上購點</button>
             </div>
 
-            <!-- 1. 競標大廳 (含 20 工種即時篩選) -->
+            <!-- 1. 競標大廳 -->
             <div id="sectionOrders" class="space-y-4">
                 <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-2">
                     <div class="flex justify-between items-center">
@@ -771,7 +767,7 @@ def tech_app():
             </div>
         </div>
 
-        <!-- 報價彈窗 (含 AI 工項帶入) -->
+        <!-- 報價彈窗 -->
         <div id="bidModal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
             <div class="bg-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto border border-slate-700">
                 <div class="flex justify-between items-center border-b border-slate-700 pb-3">
@@ -974,7 +970,8 @@ def tech_app():
                                 <div class="flex items-center gap-2">
                                     <span class="bg-blue-600/30 text-blue-400 text-xs px-2 py-0.5 rounded font-bold">${o.category}</span>
                                     <span class="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded font-bold">📍 ${o.district}</span>
-                                    <span class="bg-purple-600/30 text-purple-300 text-xs px-2 py-0.5 rounded font-bold">已有 ${o.bid_count || 0} 位參與競標</span>
+                                    <span class="bg-purple-600/30 text-purple-300 text-xs px-2 py-0.5 rounded font-bold">已有 ${o.bid_count || 0} 位競標</span>
+                                    ${o.need_supervision ? '<span class="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-0.5 rounded font-bold">🛡️ 業主選配8%監工</span>' : ''}
                                     ${isMyArea ? '<span class="bg-amber-500 text-slate-950 text-[10px] px-2 py-0.5 rounded-full font-bold">👑 您已卡位此區</span>' : ''}
                                 </div>
                                 <h4 class="text-base font-bold text-white mt-1">${o.description}</h4>
@@ -1009,7 +1006,7 @@ def tech_app():
             }
 
             function aiAutoQuote() {
-                document.getElementById('bidNotes').value = "1. 專業師傅到府現勘與儀器檢測\n2. 包含標準規範施工工資與國產一級大廠合格材料\n3. 完工現場廢料清理清運\n4. 提供官方 8% 監工存證驗收與 6 個月原廠責任保固";
+                document.getElementById('bidNotes').value = "1. 專業師傅到府現勘與儀器檢測\n2. 包含標準規範施工工資與國產一級大廠合格材料\n3. 完工現場廢料清理清運\n4. 提供官方履約存證驗收與 6 個月責任保固";
             }
 
             document.getElementById('bidSubmitForm').onsubmit = async (e) => {
@@ -1244,6 +1241,7 @@ def admin_page():
                                 <div>
                                     <span class="font-bold text-slate-900 text-base">#${o.id} - ${o.category}</span>
                                     <span class="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded ml-2">📍 ${o.district}</span>
+                                    ${o.need_supervision ? '<span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded ml-1">🛡️ 已選配8%監工</span>' : '<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-1">純媒合(未選監工)</span>'}
                                     <div class="text-xs text-gray-500 mt-1">發案人：${o.name} (${o.phone}) ｜ 地址：${o.address}</div>
                                     <div class="text-xs text-slate-700 font-medium mt-1">需求描述：${o.description}</div>
                                 </div>
@@ -1289,20 +1287,21 @@ def api_orders():
         d = request.json
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         c.execute('''
-            INSERT INTO orders (name, phone, district, address, lat, lng, category, description, budget, fee_8pct, ref_tech_code, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (d['name'], d['phone'], d.get('district', '淡水區'), d['address'], float(d.get('lat', 25.175)), float(d.get('lng', 121.443)), d['category'], d['description'], int(d.get('budget', 0)), int(d.get('fee_8pct', 0)), d.get('ref_tech_code', ''), now_str))
+            INSERT INTO orders (name, phone, district, address, lat, lng, category, description, budget, need_supervision, fee_8pct, ref_tech_code, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (d['name'], d['phone'], d.get('district', '淡水區'), d['address'], float(d.get('lat', 25.175)), float(d.get('lng', 121.443)), d['category'], d['description'], int(d.get('budget', 0)), int(d.get('need_supervision', 0)), int(d.get('fee_8pct', 0)), d.get('ref_tech_code', ''), now_str))
         order_id = c.lastrowid
         conn.commit()
         conn.close()
 
         ref_info = f"\n推薦代碼：{d.get('ref_tech_code')}" if d.get('ref_tech_code') else ""
-        msg = f"🔔 【QT30 新修繕發案】\n單號：#{order_id}\n工種：{d['category']}\n客戶：{d['name']} ({d['phone']})\n地區：{d.get('district', '')}\n預算：NT$ {int(d.get('budget', 0)):,}\n預計8%監工費：NT$ {int(d.get('fee_8pct', 0)):,}{ref_info}\n※ 已開放該工種師傅暗標競價！"
+        sup_info = "\n🛡️ 【已加選 8% 官方專案監工】" if d.get('need_supervision') else "\n（純媒合發案，接洽中可推薦加購監工）"
+        msg = f"🔔 【QT30 新修繕發案】\n單號：#{order_id}\n工種：{d['category']}\n客戶：{d['name']} ({d['phone']})\n地區：{d.get('district', '')}\n預算：NT$ {int(d.get('budget', 0)):,}{sup_info}{ref_info}\n※ 已開放該工種師傅暗標競價！"
         send_line_push_message(msg)
         return jsonify({"success": True, "order_id": order_id})
 
     c.execute('''
-        SELECT o.id, o.name, o.phone, o.district, o.address, o.category, o.description, o.budget, o.fee_8pct, o.ref_tech_code, o.status, o.winner_phone, o.work_status, o.photo_data, o.reward_paid, o.reward_amount, o.created_at, o.lat, o.lng,
+        SELECT o.id, o.name, o.phone, o.district, o.address, o.category, o.description, o.budget, o.fee_8pct, o.ref_tech_code, o.status, o.winner_phone, o.work_status, o.photo_data, o.reward_paid, o.reward_amount, o.created_at, o.lat, o.lng, o.need_supervision,
                COUNT(b.id) as bid_count
         FROM orders o
         LEFT JOIN bids b ON o.id = b.order_id
@@ -1320,7 +1319,8 @@ def api_orders():
             "winner_phone": r[11], "work_status": r[12], "photo_data": r[13],
             "reward_paid": r[14], "reward_amount": r[15], "created_at": r[16],
             "lat": r[17] or 25.175, "lng": r[18] or 121.443,
-            "bid_count": r[19]
+            "need_supervision": r[19] if len(r) > 19 else 0,
+            "bid_count": r[20] if len(r) > 20 else 0
         })
     return jsonify(result)
 
@@ -1357,7 +1357,7 @@ def api_admin_orders_bids():
         return jsonify([])
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, name, phone, district, address, category, description, budget, fee_8pct, status, winner_phone, work_status, photo_data, created_at FROM orders ORDER BY id DESC")
+    c.execute("SELECT id, name, phone, district, address, category, description, budget, fee_8pct, status, winner_phone, work_status, photo_data, created_at, need_supervision FROM orders ORDER BY id DESC")
     orders = c.fetchall()
     result = []
     for o in orders:
@@ -1368,7 +1368,9 @@ def api_admin_orders_bids():
             "address": o[4], "category": o[5], "description": o[6],
             "budget": o[7], "fee_8pct": o[8], "status": o[9],
             "winner_phone": o[10], "work_status": o[11], "photo_data": o[12],
-            "created_at": o[13], "bids": bids
+            "created_at": o[13],
+            "need_supervision": o[14] if len(o) > 14 else 0,
+            "bids": bids
         })
     conn.close()
     return jsonify(result)
