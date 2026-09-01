@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 房屋修繕派工平台 (實名制與安全登入版)")
+app = FastAPI(title="QT30 房屋修繕派工平台 (正式營運修復版)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,7 +28,6 @@ DB_PATH = "qt30_database.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    # 案件資料表
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS cases (
         id TEXT PRIMARY KEY,
@@ -47,7 +46,6 @@ def init_db():
         created_at TEXT
     )
     """)
-    # 師傅卡位服務區表
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS spots (
         id TEXT PRIMARY KEY,
@@ -59,7 +57,6 @@ def init_db():
         technician_name TEXT
     )
     """)
-    # 師傅實名資料表 (密碼、證件、認證狀態)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS technicians (
         phone TEXT PRIMARY KEY,
@@ -74,7 +71,6 @@ def init_db():
         created_at TEXT
     )
     """)
-    # 點數儲值訂單紀錄表
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS topup_orders (
         trade_no TEXT PRIMARY KEY,
@@ -85,7 +81,6 @@ def init_db():
         created_at TEXT
     )
     """)
-    # 初始化預設示範師傅帳號 (0912345678 / 123456 / 已通過 / 800點)
     cursor.execute("""
     INSERT OR IGNORE INTO technicians (phone, password, name, id_card_no, id_card_photo, license_photo, skill, points, verified_status, created_at)
     VALUES ('0912345678', '123456', '王師傅', 'A123456789', '', '', '水電維修', 800, '已通過', '2026-09-01 00:00:00')
@@ -110,7 +105,6 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# LINE 金鑰
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
     "LINE_CHANNEL_ACCESS_TOKEN",
     "Fqylo2CR5nbZX27rp8sg5F7l7Ik4UrvVTPEAxN9l+gpNd2C7V2LBY6NIEakUsBXvZGJ2yq/bzpv0lXLsMrv2C5c6rrG926TAkHnSZkIEZIS1uywU6XJ4waIONGyQxEVq8ff75muOQ4S9wF1mztzz8QdB04t89/1O/w1cDnyilFU="
@@ -199,7 +193,7 @@ class TechLogin(BaseModel):
 
 class TechVerifyUpdate(BaseModel):
     phone: str
-    status: str  # '已通過' 或 '已拒絕'
+    status: str
 
 class AdminAuth(BaseModel):
     password: str
@@ -230,13 +224,13 @@ def register_tech(data: TechRegister):
         f"🆔 身分證號：{data.idCardNo}\n"
         f"🔧 專業項目：{data.skill}\n"
         f"------------------------\n"
-        f"請管理員儘速登入後台審核證件！"
+        f"請管理員儘速至後台審核證件！"
     )
     send_line_notification(msg)
 
     return {
         "success": True,
-        "message": "實名註冊成功！資料已送出審核（已贈送 100 點體驗點數），待管理員審核通過後即可開始接單！",
+        "message": "實名註冊成功！資料已送出審核（已贈送 100 點體驗點數），待審核通過即可搶單！",
         "tech": {
             "phone": data.phone,
             "name": data.name,
@@ -321,12 +315,12 @@ def verify_technician(data: TechVerifyUpdate):
             f"👤 師傅：{tech['name']} ({data.phone})\n"
             f"📌 審核狀態：{data.status}\n"
             f"------------------------\n"
-            f"師傅已可於工作台進行權限操作。"
+            f"師傅已可於工作台進行搶單操作。"
         )
         send_line_notification(msg)
     return {"success": True}
 
-# --- 案件管理與扣點搶單 API ---
+# --- 案件管理與搶單 API ---
 @app.post("/api/cases")
 def create_case(data: CaseCreate):
     timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -441,7 +435,7 @@ def unlock_case(case_id: str, phone: str):
             f"📍 施工地址：{c['address']}\n"
             f"💰 扣除點數：{COST} 點 (剩餘 {new_points} 點)\n"
             f"------------------------\n"
-            f"請師傅立即聯絡客戶安排到府估價！"
+            f"請師傅立即聯絡客戶！"
         )
         send_line_notification(msg)
 
@@ -465,7 +459,7 @@ def unlock_case(case_id: str, phone: str):
         }
     }
 
-# --- 綠界儲值與付款 API ---
+# --- 綠界儲值與付款 API (指定 Credit 信用卡) ---
 @app.post("/api/tech/topup")
 def create_topup_order(data: TopupCreate, request: Request):
     amount = data.amount
@@ -496,10 +490,10 @@ def create_topup_order(data: TopupCreate, request: Request):
         "PaymentType": "aio",
         "TotalAmount": str(amount),
         "TradeDesc": ecpay_url_encode("QT30師傅點數儲值"),
-        "ItemName": f"QT30 接單點數 {points} 點",
+        "ItemName": f"QT30點數{points}點",
         "ReturnURL": f"{base_url}/api/ecpay/topup-callback",
         "ClientBackURL": f"{base_url}/tech",
-        "ChoosePayment": "ALL",
+        "ChoosePayment": "Credit",
         "EncryptType": "1"
     }
 
@@ -510,7 +504,7 @@ def create_topup_order(data: TopupCreate, request: Request):
     html_content = f"""
     <!DOCTYPE html>
     <html>
-    <head><title>前往綠界儲值支付...</title><meta charset="utf-8"></head>
+    <head><title>前往綠界信用卡儲值...</title><meta charset="utf-8"></head>
     <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#0f172a;color:#fff;">
         <div style="text-align:center;padding:30px;background:#1e293b;border-radius:12px;border:1px solid #334155;">
             <h2 style="color:#38bdf8;">正在前往綠界官方安全收銀台...</h2>
@@ -607,10 +601,10 @@ def get_payment_page(case_id: str, request: Request):
         "PaymentType": "aio",
         "TotalAmount": str(target["deposit_amount"]),
         "TradeDesc": ecpay_url_encode("QT30維修工程款"),
-        "ItemName": f"{target['item']} 修繕款項",
+        "ItemName": f"{target['item']}款項",
         "ReturnURL": f"{base_url}/api/ecpay/callback",
         "ClientBackURL": f"{base_url}/app",
-        "ChoosePayment": "ALL",
+        "ChoosePayment": "Credit",
         "EncryptType": "1"
     }
 
@@ -665,7 +659,7 @@ async def ecpay_callback(request: Request):
             send_line_notification(msg)
     return "1|OK"
 
-# --- 據點卡位 API ---
+# --- 據點 API ---
 @app.get("/api/spots")
 def get_spots():
     conn = get_db()
@@ -820,7 +814,7 @@ def serve_app_page():
     </html>
     """
 
-# --- 師傅端工作台 (/tech) 實名註冊 / 登入 / 接單大廳 ---
+# --- 師傅端工作台 (/tech) ---
 @app.get("/tech", response_class=HTMLResponse)
 def serve_tech_page():
     return """
@@ -861,12 +855,10 @@ def serve_tech_page():
         </div>
       </header>
 
-      <!-- 審核狀態橫幅提示 -->
       <div id="pendingBanner" class="hidden bg-amber-950/80 border-b border-amber-800 p-3 text-center text-xs text-amber-200">
         ⚠️ 您的實名認證資料正在由管理員審核中。審核通過前，暫時無法扣點搶單與卡位。
       </div>
 
-      <!-- 主畫面 -->
       <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
         <div class="flex border-b border-slate-800 space-x-2 sm:space-x-4">
           <button id="tabBtn-hall" onclick="switchTab('hall')" class="tab-btn px-4 py-3 font-bold text-sm text-blue-400 border-b-2 border-blue-500 flex items-center gap-1.5">
@@ -959,7 +951,7 @@ def serve_tech_page():
         </section>
       </div>
 
-      <!-- 登入 / 實名註冊 彈窗 (未登入時強制跳出) -->
+      <!-- 登入 / 註冊 彈窗 -->
       <div id="authModal" class="hidden fixed inset-0 bg-black/85 flex justify-center items-center z-50 p-4 overflow-y-auto">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 my-8">
           <div class="text-center">
@@ -1406,7 +1398,7 @@ def serve_tech_page():
               loadSpots();
             }
           } catch(e) {
-            alert('儲存失敗');
+            alert('儲值失敗');
           }
         }
 
@@ -1429,7 +1421,6 @@ def serve_admin_page():
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-100 min-h-screen p-4 sm:p-8">
-      <!-- 後台登入密碼彈窗 -->
       <div id="adminAuthModal" class="hidden fixed inset-0 bg-black/80 flex justify-center items-center z-50 p-4">
         <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
           <div class="text-center">
