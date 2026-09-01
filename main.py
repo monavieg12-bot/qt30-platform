@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 派工與金流平台 (正式營運版)")
+app = FastAPI(title="QT30 房屋修繕派工接單平台")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# LINE 金鑰設定
+# LINE 金鑰
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
     "LINE_CHANNEL_ACCESS_TOKEN",
     "Fqylo2CR5nbZX27rp8sg5F7l7Ik4UrvVTPEAxN9l+gpNd2C7V2LBY6NIEakUsBXvZGJ2yq/bzpv0lXLsMrv2C5c6rrG926TAkHnSZkIEZIS1uywU6XJ4waIONGyQxEVq8ff75muOQ4S9wF1mztzz8QdB04t89/1O/w1cDnyilFU="
@@ -78,6 +78,7 @@ class CaseCreate(BaseModel):
 class CaseUpdate(BaseModel):
     status: Optional[str] = None
     technician: Optional[str] = None
+    depositAmount: Optional[int] = None
     paymentStatus: Optional[str] = None
 
 cases_db = []
@@ -93,7 +94,7 @@ def create_case(data: CaseCreate):
         "tradeNo": trade_no,
         "status": "待派工",
         "technician": "未指派",
-        "paymentStatus": "未付款",
+        "paymentStatus": "未收款",
         "depositAmount": data.depositAmount or 500,
         "photo": data.photo,
         "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -104,18 +105,18 @@ def create_case(data: CaseCreate):
     photo_tag = "📷 【已附現場照片】" if data.photo else "📷 【未附現場照片】"
 
     msg = (
-        f"🔔 【QT30 正式新進報修單】\n"
+        f"🔔 【QT30 新進預約報修單】\n"
         f"------------------------\n"
         f"📌 案件編號：{new_case['id']}\n"
         f"👤 客戶姓名：{new_case['clientName']}\n"
         f"📞 聯絡電話：{new_case['clientPhone']}\n"
         f"📍 修繕地址：{new_case['address']}\n"
         f"🔧 報修項目：{new_case['item']}\n"
-        f"💰 預算金額：NT$ {new_case['depositAmount']}\n"
+        f"💰 客戶預算：NT$ {new_case['depositAmount']}\n"
         f"📝 狀況描述：{new_case['description']}\n"
         f"{photo_tag}\n"
         f"------------------------\n"
-        f"⚡ 請至後台確認並安排師傅！"
+        f"⚡ 請儘速聯繫客戶，確認後可至後台發送付款連結！"
     )
     send_line_notification(msg)
     return {"success": True, "case": new_case}
@@ -135,8 +136,8 @@ def get_payment_page(case_id: str, request: Request):
         "MerchantTradeDate": trade_date,
         "PaymentType": "aio",
         "TotalAmount": str(target["depositAmount"]),
-        "TradeDesc": ecpay_url_encode("QT30維修預算支付"),
-        "ItemName": f"{target['item']} 修繕預算金額",
+        "TradeDesc": ecpay_url_encode("QT30維修工程款"),
+        "ItemName": f"{target['item']} 修繕款項",
         "ReturnURL": f"{base_url}/api/ecpay/callback",
         "ClientBackURL": f"{base_url}/app",
         "ChoosePayment": "ALL",
@@ -154,7 +155,7 @@ def get_payment_page(case_id: str, request: Request):
     <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f8fafc;">
         <div style="text-align:center;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
             <h2 style="color:#0284c7;">正在前往綠界官方安全收銀台...</h2>
-            <p>案件編號：<b>{target['id']}</b> | 預算金額：<b>NT$ {target['depositAmount']}</b></p>
+            <p>案件編號：<b>{target['id']}</b> | 應付金額：<b>NT$ {target['depositAmount']}</b></p>
             <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
                 {inputs_html}
             </form>
@@ -176,14 +177,14 @@ async def ecpay_callback(request: Request):
             if c["tradeNo"] == trade_no:
                 c["paymentStatus"] = "已付款"
                 msg = (
-                    f"🎉 【QT30 真實款項已入帳！】\n"
+                    f"🎉 【QT30 款項已成功入帳！】\n"
                     f"------------------------\n"
                     f"📌 案件編號：{c['id']}\n"
                     f"👤 客戶：{c['clientName']}\n"
                     f"💰 入帳金額：NT$ {c['depositAmount']}\n"
-                    f"💳 付款方式：正式金流扣款成功\n"
+                    f"💳 付款狀態：綠界扣款成功\n"
                     f"------------------------\n"
-                    f"款項已進入您的綠界帳戶，請盡速派工！"
+                    f"款項已入帳，請安排師傅前往施工！"
                 )
                 send_line_notification(msg)
                 break
@@ -201,12 +202,14 @@ def update_case(case_id: str, data: CaseUpdate):
                 c["status"] = data.status
             if data.technician is not None:
                 c["technician"] = data.technician
+            if data.depositAmount is not None:
+                c["depositAmount"] = data.depositAmount
             if data.paymentStatus is not None:
                 c["paymentStatus"] = data.paymentStatus
             return {"success": True, "case": c}
     raise HTTPException(status_code=404, detail="找不到案件")
 
-# --- 客戶發案頁面 (/app) ---
+# --- 客戶發案頁面 (/app) 無刷卡，純預約確認 ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -215,14 +218,14 @@ def serve_app_page():
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>QT30 房屋修繕發案平台</title>
+      <title>QT30 房屋修繕預約接單</title>
       <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-slate-100 min-h-screen p-4 sm:p-8">
       <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-blue-600 p-6 text-white text-center">
           <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
-          <p class="text-blue-100 text-sm mt-1">線上預約專業師傅，支援線上即時付款</p>
+          <p class="text-blue-100 text-sm mt-1">填單立即為您安排專業師傅聯繫報價</p>
         </div>
         
         <form id="caseForm" class="p-6 space-y-4">
@@ -251,7 +254,7 @@ def serve_app_page():
           </div>
           <div>
             <label class="block text-sm font-semibold text-gray-700">預算金額 (NT$)</label>
-            <input type="number" id="depositAmount" value="500" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <input type="number" id="depositAmount" value="500" placeholder="預計修繕預算" class="w-full mt-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
           </div>
           <div>
             <label class="block text-sm font-semibold text-gray-700">狀況描述</label>
@@ -267,19 +270,21 @@ def serve_app_page():
           </div>
 
           <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-lg shadow-md transition duration-200">
-            送出預約報修
+            送出預約需求
           </button>
         </form>
 
-        <div id="resultModal" class="hidden p-6 bg-green-50 border-t border-green-200 text-center">
-          <h3 class="text-lg font-bold text-green-800">✅ 報修單已成功送出！</h3>
-          <p class="text-sm text-gray-600 mt-1">案件編號：<span id="resCaseId" class="font-bold text-blue-600"></span></p>
-          <p class="text-xs text-gray-500 mt-1">師傅已收到 LINE 即時推播通知</p>
-          <div class="mt-4">
-            <a id="payBtn" href="#" class="inline-block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow">
-              💳 前往綠界線上支付預算 (NT$ <span id="resAmount">500</span>)
-            </a>
+        <div id="resultModal" class="hidden p-8 bg-green-50 text-center space-y-3">
+          <div class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">✓</div>
+          <h3 class="text-xl font-bold text-green-800">預約單已成功送出！</h3>
+          <p class="text-sm text-gray-600">您的案件編號：<span id="resCaseId" class="font-mono font-bold text-blue-600"></span></p>
+          <div class="bg-white p-4 rounded-xl border border-green-200 text-left text-xs text-gray-600 space-y-1">
+            <p>• 系統已即時通知專業師傅。</p>
+            <p>• 師傅將會儘速透過電話或 LINE 與您聯絡確認細節與到府時間。</p>
           </div>
+          <button onclick="location.reload()" class="mt-4 w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition">
+            再填寫一筆
+          </button>
         </div>
       </div>
 
@@ -325,13 +330,11 @@ def serve_app_page():
               document.getElementById('caseForm').classList.add('hidden');
               document.getElementById('resultModal').classList.remove('hidden');
               document.getElementById('resCaseId').innerText = result.case.id;
-              document.getElementById('resAmount').innerText = result.case.depositAmount;
-              document.getElementById('payBtn').href = '/api/pay/' + result.case.id;
             }
           } catch(err) {
             alert('送出失敗，請稍後再試');
             btn.disabled = false;
-            btn.innerText = '送出預約報修';
+            btn.innerText = '送出預約需求';
           }
         });
       </script>
@@ -339,7 +342,7 @@ def serve_app_page():
     </html>
     """
 
-# --- 派工管理後台 (/admin) ---
+# --- 派工管理後台 (/admin) 可複製專屬刷卡付款連結 ---
 @app.get("/admin", response_class=HTMLResponse)
 def serve_admin_page():
     return """
@@ -356,7 +359,7 @@ def serve_admin_page():
         <header class="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm gap-4">
           <div>
             <h1 class="text-2xl font-black text-slate-800">QT30 派工管理後台</h1>
-            <p class="text-sm text-slate-500 mt-1">即時掌握修繕案件、現場照片、付款狀態與師傅派工</p>
+            <p class="text-sm text-slate-500 mt-1">掌握案件、照片、修改金額與發送專屬收款連結</p>
           </div>
           <button onclick="loadCases()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow transition">
             🔄 重新整理清單
@@ -372,10 +375,10 @@ def serve_admin_page():
                   <th class="p-4">客戶資訊</th>
                   <th class="p-4">現場照片</th>
                   <th class="p-4">修繕項目 / 內容</th>
-                  <th class="p-4">預算金額 / 付款狀態</th>
+                  <th class="p-4">應收金額 / 付款狀態</th>
                   <th class="p-4">派工師傅</th>
                   <th class="p-4">案件狀態</th>
-                  <th class="p-4 text-center">操作</th>
+                  <th class="p-4 text-center">操作 / 收款</th>
                 </tr>
               </thead>
               <tbody id="caseTableBody" class="divide-y divide-slate-100">
@@ -394,6 +397,13 @@ def serve_admin_page():
         function viewPhoto(src) {
           document.getElementById('modalImg').src = src;
           document.getElementById('imgModal').classList.remove('hidden');
+        }
+
+        function copyPayLink(caseId) {
+          const url = window.location.origin + '/api/pay/' + caseId;
+          navigator.clipboard.writeText(url).then(() => {
+            alert('💳 專屬付款網址已複製！\\n可以透過 LINE 發給客戶刷卡：\\n' + url);
+          });
         }
 
         async function loadCases() {
@@ -426,8 +436,11 @@ def serve_admin_page():
                   <p class="text-xs text-slate-500 mt-1 max-w-xs truncate">${c.description}</p>
                 </td>
                 <td class="p-4">
-                  <div class="font-semibold text-slate-700">NT$ ${c.depositAmount}</div>
-                  <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold ${c.paymentStatus === '已付款' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
+                  <div class="flex items-center space-x-1">
+                    <span class="text-xs text-slate-400">NT$</span>
+                    <input type="number" id="amt-${c.id}" value="${c.depositAmount}" class="w-20 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-bold text-slate-800 focus:outline-none">
+                  </div>
+                  <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-bold ${c.paymentStatus === '已付款' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
                     ${c.paymentStatus}
                   </span>
                 </td>
@@ -442,9 +455,12 @@ def serve_admin_page():
                     <option value="已結案" ${c.status === '已結案' ? 'selected' : ''}>已結案</option>
                   </select>
                 </td>
-                <td class="p-4 text-center">
-                  <button onclick="saveCase('${c.id}')" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-3 py-1.5 rounded transition">
-                    儲存更新
+                <td class="p-4 text-center space-y-1">
+                  <button onclick="saveCase('${c.id}')" class="block w-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-2.5 py-1 rounded transition">
+                    💾 儲存修改
+                  </button>
+                  <button onclick="copyPayLink('${c.id}')" class="block w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1 rounded transition">
+                    🔗 複製付款連結
                   </button>
                 </td>
               </tr>
@@ -457,15 +473,16 @@ def serve_admin_page():
         async function saveCase(id) {
           const tech = document.getElementById('tech-' + id).value;
           const status = document.getElementById('status-' + id).value;
+          const amt = parseInt(document.getElementById('amt-' + id).value) || 500;
           try {
             const res = await fetch('/api/cases/' + id, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ technician: tech, status: status })
+              body: JSON.stringify({ technician: tech, status: status, depositAmount: amt })
             });
             const data = await res.json();
             if (data.success) {
-              alert('案件 ' + id + ' 已成功更新！');
+              alert('案件 ' + id + ' 已成功更新金額與指派！');
               loadCases();
             }
           } catch(e) {
