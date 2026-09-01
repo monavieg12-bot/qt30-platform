@@ -19,7 +19,7 @@ ECPAY_MERCHANT_ID = "3002607"
 ECPAY_HASH_KEY = "pwFHCqoQZGmho4w6"
 ECPAY_HASH_IV = "EkRm7iFT261dpevs"
 ECPAY_API_URL = "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
-BASE_URL = os.environ.get("BASE_URL", "https://qt30-platform.onrender.com")
+BASE_URL = os.environ.get("BASE_URL", "https://qt30home.com")
 
 DB_FILE = "qt30.db"
 
@@ -143,17 +143,48 @@ def index():
     return redirect("/app")
 
 # ==========================================
-# 1. 客戶端預約報修 (/app)
+# 1. 客戶端預約報修 (/app) - 已注入在地 SEO 與結構化資料
 # ==========================================
 @app.route("/app")
 def client_app():
     return render_template_string('''
     <!DOCTYPE html>
-    <html>
+    <html lang="zh-TW">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>QT30 房屋修繕預約</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <!-- 核心在地 SEO 標題與描述 -->
+        <title>淡水房屋修繕推薦｜QT30 雙北居家裝修・水電抓漏工程・8%透明監工</title>
+        <meta name="description" content="QT30 提供淡水及雙北地區專業房屋修繕、居家修繕、水電維修、防水抓漏、泥作油漆等統包工程。透明報價、專人監工、師傅即時派工，線上填單快速預約！">
+        <meta name="keywords" content="淡水房屋修繕, 淡水水電維修, 淡水抓漏, 雙北居家修繕, 統包裝潢, 泥作油漆, 房屋翻修, QT30">
+        <meta name="robots" content="index, follow">
+        <link rel="canonical" href="https://qt30home.com/app">
+
+        <!-- 社群分享卡片 (Open Graph) -->
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="淡水房屋修繕推薦｜QT30 雙北居家裝修・水電抓漏工程">
+        <meta property="og:description" content="淡水及雙北在地房屋修繕平台，水電、防水、泥作、裝修一鍵預約，專業監工品質保證。">
+        <meta property="og:url" content="https://qt30home.com/app">
+        <meta property="og:site_name" content="QT30 房屋修繕平台">
+
+        <!-- Google 在地服務結構化資料 (LocalBusiness Schema) -->
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "HomeAndConstructionBusiness",
+          "name": "QT30 房屋修繕平台",
+          "url": "https://qt30home.com/app",
+          "description": "雙北及淡水地區專業房屋修繕、水電、泥作、防水工程與監工服務",
+          "areaServed": [
+            {"@type": "AdministrativeArea", "name": "淡水區"},
+            {"@type": "AdministrativeArea", "name": "新北市"},
+            {"@type": "AdministrativeArea", "name": "台北市"}
+          ],
+          "priceRange": "$$"
+        }
+        </script>
+
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center p-3">
@@ -311,7 +342,7 @@ def tech_app():
 
     return render_template_string('''
     <!DOCTYPE html>
-    <html>
+    <html lang="zh-TW">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -780,7 +811,7 @@ def tech_app():
 def admin_page():
     return render_template_string('''
     <!DOCTYPE html>
-    <html>
+    <html lang="zh-TW">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -928,7 +959,7 @@ def admin_page():
             }
 
             async function settleReferralReward(orderId, refCode, defaultPts) {
-                const inputPts = prompt(`【工單 #${orderId} 成交轉介點數結算】\n推薦師傅邀請碼：${refCode}\n請輸入本次欲反饋撥款至該師傅帳戶之點數：`, defaultPts);
+                const inputPts = prompt(`【工單 #${orderId} 成交轉介點數結算】\\n推薦師傅邀請碼：${refCode}\\n請輸入本次欲反饋撥款至該師傅帳戶之點數：`, defaultPts);
                 if(inputPts === null || inputPts.trim() === '') return;
                 const pts = parseInt(inputPts.trim());
                 if(isNaN(pts) || pts <= 0) {
