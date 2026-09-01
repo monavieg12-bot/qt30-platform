@@ -36,6 +36,8 @@ def init_db():
             phone TEXT,
             district TEXT DEFAULT '',
             address TEXT,
+            lat REAL DEFAULT 25.175,
+            lng REAL DEFAULT 121.443,
             category TEXT,
             description TEXT,
             budget INTEGER DEFAULT 0,
@@ -50,6 +52,16 @@ def init_db():
             created_at TEXT
         )
     ''')
+    # 防呆補欄位 (若先前無 lat/lng)
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN lat REAL DEFAULT 25.175")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN lng REAL DEFAULT 121.443")
+    except Exception:
+        pass
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS technicians (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,7 +155,7 @@ def index():
     return redirect("/app")
 
 # ==========================================
-# 1. 客戶端預約報修 (/app) - 已注入在地 SEO 與結構化資料
+# 1. 客戶端預約報修 (/app) - 含免費開源地圖 + SEO
 # ==========================================
 @app.route("/app")
 def client_app():
@@ -154,21 +166,17 @@ def client_app():
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         
-        <!-- 核心在地 SEO 標題與描述 -->
         <title>淡水房屋修繕推薦｜QT30 雙北居家裝修・水電抓漏工程・8%透明監工</title>
         <meta name="description" content="QT30 提供淡水及雙北地區專業房屋修繕、居家修繕、水電維修、防水抓漏、泥作油漆等統包工程。透明報價、專人監工、師傅即時派工，線上填單快速預約！">
         <meta name="keywords" content="淡水房屋修繕, 淡水水電維修, 淡水抓漏, 雙北居家修繕, 統包裝潢, 泥作油漆, 房屋翻修, QT30">
         <meta name="robots" content="index, follow">
         <link rel="canonical" href="https://qt30home.com/app">
 
-        <!-- 社群分享卡片 (Open Graph) -->
-        <meta property="og:type" content="website">
-        <meta property="og:title" content="淡水房屋修繕推薦｜QT30 雙北居家裝修・水電抓漏工程">
-        <meta property="og:description" content="淡水及雙北在地房屋修繕平台，水電、防水、泥作、裝修一鍵預約，專業監工品質保證。">
-        <meta property="og:url" content="https://qt30home.com/app">
-        <meta property="og:site_name" content="QT30 房屋修繕平台">
+        <!-- Leaflet 免費開源地圖 CDN -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-        <!-- Google 在地服務結構化資料 (LocalBusiness Schema) -->
+        <!-- Google 結構化資料 -->
         <script type="application/ld+json">
         {
           "@context": "https://schema.org",
@@ -186,6 +194,9 @@ def client_app():
         </script>
 
         <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            #map { height: 200px; width: 100%; border-radius: 0.75rem; z-index: 1; }
+        </style>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center p-3">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-4">
@@ -204,10 +215,11 @@ def client_app():
                         <input type="tel" id="phone" required placeholder="例如：0912345678" class="w-full mt-1 p-2.5 border rounded-xl">
                     </div>
                 </div>
+
                 <div class="grid grid-cols-3 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-gray-700">行政地區</label>
-                        <select id="district" class="w-full mt-1 p-2.5 border rounded-xl bg-white font-bold text-blue-700">
+                        <select id="district" class="w-full mt-1 p-2.5 border rounded-xl bg-white font-bold text-blue-700" onchange="onDistrictChange()">
                             <option value="淡水區">淡水區</option>
                             <option value="板橋區">板橋區</option>
                             <option value="三重區">三重區</option>
@@ -223,6 +235,18 @@ def client_app():
                         <input type="text" id="address" required placeholder="例如：中正路一段 100 號 3 樓" class="w-full mt-1 p-2.5 border rounded-xl">
                     </div>
                 </div>
+
+                <!-- 免費互動地圖區塊 -->
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-xs font-bold text-gray-700">🗺️ 地圖定位 (點擊地圖調整位置)</label>
+                        <button type="button" onclick="locateUser()" class="text-[11px] text-blue-600 font-bold hover:underline">📍 抓取目前位置</button>
+                    </div>
+                    <div id="map"></div>
+                    <input type="hidden" id="lat" value="25.175">
+                    <input type="hidden" id="lng" value="121.443">
+                </div>
+
                 <div>
                     <label class="block text-xs font-bold text-gray-700">修繕項目類別</label>
                     <select id="category" class="w-full mt-1 p-2.5 border rounded-xl">
@@ -248,7 +272,7 @@ def client_app():
                     </div>
                 </div>
 
-                <!-- 8% 監工條款與強化免責 -->
+                <!-- 8% 監工條款 -->
                 <div class="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-2">
                     <div class="flex justify-between items-center text-xs">
                         <span class="font-bold text-blue-900">🛡️ 平台專案代管暨 8% 監工服務費：</span>
@@ -258,7 +282,7 @@ def client_app():
                     <div class="flex items-start gap-2 pt-2 border-t border-blue-200">
                         <input type="checkbox" id="agreeTerm" required class="mt-0.5 rounded text-blue-600">
                         <label for="agreeTerm" class="text-[11px] text-gray-700 leading-tight">
-                            我已閱讀並同意 <a href="javascript:void(0)" onclick="openModal()" class="text-blue-600 font-bold underline">《QT30 工程代管服務協議與免責聲明》</a>（含 8% 監工計收與監督過失免責條款）。
+                            我已閱讀並同意 <a href="javascript:void(0)" onclick="openModal()" class="text-blue-600 font-bold underline">《QT30 工程代管服務協議與免責聲明》</a>。
                         </label>
                     </div>
                 </div>
@@ -273,14 +297,74 @@ def client_app():
                 <h3 class="text-lg font-black text-gray-900 border-b pb-2">QT30 工程代管服務協議與免責聲明</h3>
                 <div class="text-xs text-gray-600 space-y-2 leading-relaxed">
                     <p><strong>一、 服務性質界定：</strong>本平台所提供之「8% 監工/專案代管服務」，性質僅限於施工進度協調、工程款項託管、施工照片存證及完工行政驗收媒合，非屬法定建築法、民法委任承攬或工程技術法規之實質現場技術監督。</p>
-                    <p><strong>二、 完全排除監督與過失責任：</strong>本平台及營運團隊不具備實體指揮監督權限，亦不承擔任何現場安全管理、施工品質保證或過失監督責任。凡因施工瑕疵、工安意外、第三人損害、隱蔽工程隱患、材料劣質或未按圖施工等所衍生之損害賠償或法律糾紛，概由獨立承攬施作之入駐師傅承擔全部民事、刑事與行政賠償責任，委託人與施工方均不得以平台收取專案管理費為由主張本平台負擔連帶或任何賠償責任。</p>
-                    <p><strong>三、 驗收與爭議處理：</strong>平台依師傅上傳之施工進度照進行行政結案，不代為承擔實質保固與修繕義務；若衍生履約爭議，平台僅協助提供通訊紀錄與存證照片供雙方調解。</p>
+                    <p><strong>二、 完全排除監督與過失責任：</strong>本平台及營運團隊不具備實體指揮監督權限，亦不承擔任何現場安全管理、施工品質保證或過失監督責任。凡因施工瑕疵、工安意外、第三人損害等，概由獨立承攬施作之入駐師傅承擔責任。</p>
                 </div>
                 <button onclick="closeModal()" class="w-full bg-blue-600 text-white font-bold py-2.5 rounded-xl">我已了解並同意</button>
             </div>
         </div>
 
         <script>
+            // 初始化 Leaflet 地圖 (預設淡水區)
+            let map, marker;
+            const districtCoords = {
+                "淡水區": [25.175, 121.443],
+                "板橋區": [25.012, 121.465],
+                "三重區": [25.061, 121.498],
+                "中和區": [24.998, 121.500],
+                "新莊區": [25.035, 121.450],
+                "新店區": [24.968, 121.541],
+                "台北市全區": [25.033, 121.565],
+                "桃園市全區": [24.993, 121.300]
+            };
+
+            function initMap() {
+                map = L.map('map').setView([25.175, 121.443], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+
+                marker = L.marker([25.175, 121.443], {draggable: true}).addTo(map);
+                marker.on('dragend', function(e) {
+                    const pos = marker.getLatLng();
+                    document.getElementById('lat').value = pos.lat;
+                    document.getElementById('lng').value = pos.lng;
+                });
+
+                map.on('click', function(e) {
+                    marker.setLatLng(e.latlng);
+                    document.getElementById('lat').value = e.latlng.lat;
+                    document.getElementById('lng').value = e.latlng.lng;
+                });
+            }
+
+            function onDistrictChange() {
+                const dist = document.getElementById('district').value;
+                if(districtCoords[dist]) {
+                    const coord = districtCoords[dist];
+                    map.setView(coord, 13);
+                    marker.setLatLng(coord);
+                    document.getElementById('lat').value = coord[0];
+                    document.getElementById('lng').value = coord[1];
+                }
+            }
+
+            function locateUser() {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(function(pos) {
+                        const lat = pos.coords.latitude;
+                        const lng = pos.coords.longitude;
+                        map.setView([lat, lng], 15);
+                        marker.setLatLng([lat, lng]);
+                        document.getElementById('lat').value = lat;
+                        document.getElementById('lng').value = lng;
+                    }, function() {
+                        alert('無法獲取定位權限，請手動在線點選地圖。');
+                    });
+                }
+            }
+
+            window.onload = initMap;
+
             function calcFee() {
                 const b = parseFloat(document.getElementById('budget').value) || 0;
                 document.getElementById('feeDisplay').innerText = 'NT$ ' + Math.round(b * 0.08).toLocaleString();
@@ -291,7 +375,7 @@ def client_app():
             document.getElementById('orderForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 if(!document.getElementById('agreeTerm').checked) {
-                    alert('請先勾選同意服務協議與免責聲明！');
+                    alert('請先勾選同意服務協議！');
                     return;
                 }
                 const b = parseFloat(document.getElementById('budget').value) || 0;
@@ -300,6 +384,8 @@ def client_app():
                     phone: document.getElementById('phone').value,
                     district: document.getElementById('district').value,
                     address: document.getElementById('address').value,
+                    lat: parseFloat(document.getElementById('lat').value),
+                    lng: parseFloat(document.getElementById('lng').value),
                     category: document.getElementById('category').value,
                     description: document.getElementById('description').value,
                     ref_tech_code: document.getElementById('refTechCode').value.trim(),
@@ -326,7 +412,7 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅端工作台 (/tech)
+# 2. 師傅端工作台 (/tech) - 含派工地圖
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
@@ -347,7 +433,13 @@ def tech_app():
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>QT30 師傅接單與監工工作台</title>
+        <!-- Leaflet CDN -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            #techMap { height: 260px; width: 100%; border-radius: 1rem; z-index: 1; }
+        </style>
     </head>
     <body class="bg-slate-900 text-slate-100 min-h-screen">
         <div id="authBox" class="p-6 max-w-md mx-auto">
@@ -360,7 +452,6 @@ def tech_app():
                     <button id="tabLogin" class="flex-1 text-center font-bold text-amber-400 pb-2 border-b-2 border-amber-400">師傅登入</button>
                     <button id="tabRegister" class="flex-1 text-center font-bold text-slate-400 pb-2">新師傅註冊</button>
                 </div>
-                <!-- 登入 -->
                 <form id="loginForm" class="space-y-4">
                     <div>
                         <label class="block text-sm text-slate-300">手機號碼</label>
@@ -372,7 +463,6 @@ def tech_app():
                     </div>
                     <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 rounded-xl transition">🔑 登入工作台</button>
                 </form>
-                <!-- 註冊 -->
                 <form id="registerForm" class="space-y-3 hidden">
                     <div>
                         <label class="block text-xs text-slate-300">真實姓名</label>
@@ -429,10 +519,18 @@ def tech_app():
                 <button onclick="showSection('topup')" id="btnTabTopup" class="text-slate-400 pb-2">💎 線上購點</button>
             </div>
 
-            <!-- 1. 派工大廳 -->
+            <!-- 1. 派工大廳 (含地圖) -->
             <div id="sectionOrders" class="space-y-4">
+                <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-amber-400">🗺️ 雙北修繕案件即時分佈地圖</span>
+                        <span class="text-[11px] text-slate-400">點擊地圖圖釘可檢視詳情</span>
+                    </div>
+                    <div id="techMap"></div>
+                </div>
+
                 <div class="flex justify-between items-center">
-                    <h3 class="font-bold text-slate-200">待搶修繕工單</h3>
+                    <h3 class="font-bold text-slate-200">待搶修繕工單清單</h3>
                     <button onclick="loadOrders()" class="text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-600">🔄 重新整理</button>
                 </div>
                 <div id="ordersList" class="space-y-3"></div>
@@ -467,7 +565,7 @@ def tech_app():
                         <p class="text-xs text-slate-300 leading-relaxed">
                             將您的推薦碼提供給業主發案填寫，由平台接手派工並完工後，管理後台可一鍵結算，如有成交將自動反饋點數至該推薦師傅帳戶。
                         </p>
-                        <div class="text-[11px] text-amber-400/90 font-medium">※ 註：回饋點數依實際成交金額結算，平台保留最終審核與活動解釋權力。</div>
+                        <div class="text-[11px] text-amber-400/90 font-medium">※ 註：回饋點數依實際成交金額結算，平台保留最終審核權力。</div>
                     </div>
                 </div>
             </div>
@@ -526,6 +624,8 @@ def tech_app():
 
         <script>
             let currentTech = null;
+            let techMap = null;
+            let mapMarkers = [];
 
             document.getElementById('tabLogin').onclick = () => {
                 document.getElementById('loginForm').classList.remove('hidden');
@@ -585,6 +685,15 @@ def tech_app():
                 }
             };
 
+            function initTechMap() {
+                if (!techMap) {
+                    techMap = L.map('techMap').setView([25.10, 121.48], 11);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap'
+                    }).addTo(techMap);
+                }
+            }
+
             function renderDashboard() {
                 document.getElementById('authBox').classList.add('hidden');
                 document.getElementById('dashBox').classList.remove('hidden');
@@ -595,7 +704,11 @@ def tech_app():
                 document.getElementById('cardRefCode').innerText = currentTech.referral_code;
                 document.getElementById('myRefCount').innerText = currentTech.ref_count || 0;
                 document.getElementById('userDistricts').innerText = currentTech.exclusive_districts || '尚未加入任何卡位名單';
-                loadOrders();
+                
+                setTimeout(() => {
+                    initTechMap();
+                    loadOrders();
+                }, 100);
             }
 
             async function syncTechInfo() {
@@ -619,6 +732,9 @@ def tech_app():
                 const targetKey = sec.charAt(0).toUpperCase() + sec.slice(1);
                 document.getElementById('section' + targetKey).classList.remove('hidden');
                 document.getElementById('btnTab' + targetKey).className = 'text-amber-400 border-b-2 border-amber-400 pb-2';
+                if(sec === 'orders' && techMap) {
+                    setTimeout(() => { techMap.invalidateSize(); }, 200);
+                }
                 if(sec === 'myProjects') loadMyProjects();
             }
 
@@ -647,14 +763,28 @@ def tech_app():
                 const orders = await res.json();
                 const list = document.getElementById('ordersList');
                 list.innerHTML = '';
+                
+                // 清理舊的地圖標記
+                mapMarkers.forEach(m => techMap.removeLayer(m));
+                mapMarkers = [];
+
                 const myDists = (currentTech.exclusive_districts || '').split(',');
                 if(orders.length === 0) {
                     list.innerHTML = '<div class="text-center py-8 text-slate-500">目前尚無等待承接的修繕案件</div>';
                     return;
                 }
+
                 orders.forEach(o => {
                     const isTaken = o.status === 'taken';
                     const isMyArea = myDists.includes(o.district);
+
+                    // 加入地圖圖釘
+                    if (!isTaken && o.lat && o.lng) {
+                        const m = L.marker([o.lat, o.lng]).addTo(techMap)
+                            .bindPopup(`<b>#${o.id} ${o.category}</b><br>${o.description}<br><span style="color:#d97706;font-weight:bold;">NT$ ${o.budget.toLocaleString()}</span>`);
+                        mapMarkers.push(m);
+                    }
+
                     list.innerHTML += `
                         <div class="bg-slate-800 p-4 rounded-xl border ${isMyArea ? 'border-amber-500' : 'border-slate-700'} flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                             <div>
@@ -1028,9 +1158,9 @@ def api_orders():
         d = request.json
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         c.execute('''
-            INSERT INTO orders (name, phone, district, address, category, description, budget, fee_8pct, ref_tech_code, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (d['name'], d['phone'], d.get('district', '雙北區'), d['address'], d['category'], d['description'], int(d.get('budget', 0)), int(d.get('fee_8pct', 0)), d.get('ref_tech_code', ''), now_str))
+            INSERT INTO orders (name, phone, district, address, lat, lng, category, description, budget, fee_8pct, ref_tech_code, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (d['name'], d['phone'], d.get('district', '雙北區'), d['address'], float(d.get('lat', 25.175)), float(d.get('lng', 121.443)), d['category'], d['description'], int(d.get('budget', 0)), int(d.get('fee_8pct', 0)), d.get('ref_tech_code', ''), now_str))
         order_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -1040,7 +1170,7 @@ def api_orders():
         send_line_push_message(msg)
         return jsonify({"success": True, "order_id": order_id})
 
-    c.execute("SELECT id, name, phone, district, address, category, description, budget, fee_8pct, ref_tech_code, status, taken_by, work_status, photo_data, reward_paid, reward_amount, created_at FROM orders ORDER BY id DESC")
+    c.execute("SELECT id, name, phone, district, address, category, description, budget, fee_8pct, ref_tech_code, status, taken_by, work_status, photo_data, reward_paid, reward_amount, created_at, lat, lng FROM orders ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
     result = []
@@ -1050,7 +1180,9 @@ def api_orders():
             "address": r[4], "category": r[5], "description": r[6],
             "budget": r[7], "fee_8pct": r[8], "ref_tech_code": r[9], "status": r[10],
             "taken_by": r[11], "work_status": r[12], "photo_data": r[13],
-            "reward_paid": r[14], "reward_amount": r[15], "created_at": r[16]
+            "reward_paid": r[14], "reward_amount": r[15], "created_at": r[16],
+            "lat": r[17] if len(r) > 17 and r[17] else 25.175,
+            "lng": r[18] if len(r) > 18 and r[18] else 121.443
         })
     return jsonify(result)
 
@@ -1212,7 +1344,6 @@ def api_tech_upload_photo():
     conn.close()
     return jsonify({"success": True})
 
-# 業主轉介自訂結算反饋 API
 @app.route("/api/admin/settle_order_referral", methods=["POST"])
 def api_admin_settle_order_referral():
     d = request.json
