@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 房屋修繕派工平台 (SQLite永久資料庫版)")
+app = FastAPI(title="QT30 房屋修繕派工接單平台 (點數變現完整版)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +42,7 @@ def init_db():
         status TEXT,
         technician TEXT,
         payment_status TEXT,
+        unlocked_by TEXT,
         created_at TEXT
     )
     """)
@@ -64,7 +65,18 @@ def init_db():
         points INTEGER
     )
     """)
-    # 預設師傅與預設示範據點
+    # 點數儲值訂單紀錄表
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS topup_orders (
+        trade_no TEXT PRIMARY KEY,
+        phone TEXT,
+        amount INTEGER,
+        points INTEGER,
+        status TEXT,
+        created_at TEXT
+    )
+    """)
+    # 初始化預設測試師傅帳號 (初始 800 點)
     cursor.execute("INSERT OR IGNORE INTO technicians (phone, name, points) VALUES ('0912345678', '王師傅 (北部水電)', 800)")
     
     cursor.execute("SELECT COUNT(*) FROM spots")
@@ -154,6 +166,10 @@ class CustomSpotCreate(BaseModel):
     radiusKm: Optional[int] = 5
     technicianName: Optional[str] = "王師傅 (北部水電)"
 
+class TopupCreate(BaseModel):
+    phone: str
+    amount: int
+
 @app.post("/api/cases")
 def create_case(data: CaseCreate):
     timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -164,8 +180,8 @@ def create_case(data: CaseCreate):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO cases (id, trade_no, client_name, client_phone, address, item, description, deposit_amount, photo, status, technician, payment_status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '待派工', '未指派', '未收款', ?)
+    INSERT INTO cases (id, trade_no, client_name, client_phone, address, item, description, deposit_amount, photo, status, technician, payment_status, unlocked_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '待派工', '未指派', '未收款', '', ?)
     """, (case_id, trade_no, data.clientName, data.clientPhone, data.address, data.item, data.description, data.depositAmount or 500, data.photo, created_at))
     conn.commit()
     conn.close()
@@ -184,25 +200,33 @@ def create_case(data: CaseCreate):
         f"📝 狀況描述：{data.description}\n"
         f"{photo_tag}\n"
         f"------------------------\n"
-        f"⚡ 資料已存入永久資料庫，可至後台確認！"
+        f"⚡ 師傅已可於工作台扣點搶單！"
     )
     send_line_notification(msg)
     return {"success": True, "case": {"id": case_id, "tradeNo": trade_no, "depositAmount": data.depositAmount}}
 
 @app.get("/api/cases")
-def get_cases():
+def get_cases(phone: Optional[str] = None):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM cases ORDER BY created_at DESC")
     rows = cursor.fetchall()
     cases = []
     for r in rows:
+        unlocked = False
+        if phone and r["unlocked_by"] and phone in r["unlocked_by"].split(","):
+            unlocked = True
+
+        # 若未解鎖，遮蔽個資
+        disp_phone = r["client_phone"] if (unlocked or not phone) else (r["client_phone"][:4] + "****" + r["client_phone"][-2:] if len(r["client_phone"]) >= 6 else "***")
+        disp_address = r["address"] if (unlocked or not phone) else (r["address"][:6] + "******" if len(r["address"]) >= 6 else "***")
+
         cases.append({
             "id": r["id"],
             "tradeNo": r["trade_no"],
             "clientName": r["client_name"],
-            "clientPhone": r["client_phone"],
-            "address": r["address"],
+            "clientPhone": disp_phone,
+            "address": disp_address,
             "item": r["item"],
             "description": r["description"],
             "depositAmount": r["deposit_amount"],
@@ -210,16 +234,189 @@ def get_cases():
             "status": r["status"],
             "technician": r["technician"],
             "paymentStatus": r["payment_status"],
+            "unlocked": unlocked,
             "createdAt": r["created_at"]
         })
     conn.close()
     return {"success": True, "cases": cases}
 
+# --- 師傅扣點解鎖案件 ---
+@app.post("/api/cases/{case_id}/unlock")
+def unlock_case(case_id: str, phone: str = "0912345678"):
+    COST = 50  # 解鎖每件扣 50 點
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT points, name FROM technicians WHERE phone = ?", (phone,))
+    tech = cursor.fetchone()
+    if not tech:
+        conn.close()
+        raise HTTPException(status_code=404, detail="找不到師傅帳號")
+
+    if tech["points"] < COST:
+        conn.close()
+        return {"success": False, "message": f"點數不足！解鎖需要 {COST} 點，目前剩餘 {tech['points']} 點，請先儲值。"}
+
+    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    c = cursor.fetchone()
+    if not c:
+        conn.close()
+        raise HTTPException(status_code=404, detail="找不到案件")
+
+    unlocked_by = c["unlocked_by"] or ""
+    unlocked_list = [p for p in unlocked_by.split(",") if p]
+    if phone not in unlocked_list:
+        unlocked_list.append(phone)
+        new_unlocked_str = ",".join(unlocked_list)
+        # 扣點
+        new_points = tech["points"] - COST
+        cursor.execute("UPDATE technicians SET points = ? WHERE phone = ?", (new_points, phone))
+        cursor.execute("UPDATE cases SET unlocked_by = ?, technician = ? WHERE id = ?", (new_unlocked_str, tech["name"], case_id))
+        conn.commit()
+
+        msg = (
+            f"⚡ 【師傅成功搶單通知】\n"
+            f"------------------------\n"
+            f"🔧 搶單師傅：{tech['name']} ({phone})\n"
+            f"📌 案件編號：{c['id']}\n"
+            f"👤 客戶姓名：{c['client_name']}\n"
+            f"📞 聯絡電話：{c['client_phone']}\n"
+            f"📍 地址：{c['address']}\n"
+            f"💰 扣除點數：{COST} 點 (剩餘 {new_points} 點)\n"
+            f"------------------------\n"
+            f"請師傅立刻主動致電客戶！"
+        )
+        send_line_notification(msg)
+
+    # 取得最新案件完整資訊
+    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    latest_case = cursor.fetchone()
+    cursor.execute("SELECT points FROM technicians WHERE phone = ?", (phone,))
+    cur_points = cursor.fetchone()["points"]
+    conn.close()
+
+    return {
+        "success": True,
+        "points": cur_points,
+        "case": {
+            "id": latest_case["id"],
+            "clientName": latest_case["client_name"],
+            "clientPhone": latest_case["client_phone"],
+            "address": latest_case["address"],
+            "item": latest_case["item"],
+            "description": latest_case["description"],
+            "photo": latest_case["photo"]
+        }
+    }
+
+# --- 師傅點數與儲值金流 ---
+@app.get("/api/tech/profile")
+def get_tech_profile(phone: str = "0912345678"):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM technicians WHERE phone = ?", (phone,))
+    tech = cursor.fetchone()
+    conn.close()
+    if not tech:
+        return {"success": False, "message": "無此師傅"}
+    return {"success": True, "tech": {"phone": tech["phone"], "name": tech["name"], "points": tech["points"]}}
+
+@app.post("/api/tech/topup")
+def create_topup_order(data: TopupCreate, request: Request):
+    amount = data.amount
+    # 儲值優惠規則
+    points = amount
+    if amount == 1000:
+        points = 1100
+    elif amount == 3000:
+        points = 3500
+
+    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    trade_no = f"TOP{timestamp_str[-10:]}{int(time.time()*1000)%1000:03d}"
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO topup_orders (trade_no, phone, amount, points, status, created_at) VALUES (?, ?, ?, ?, '未付款', ?)",
+                   (trade_no, data.phone, amount, points, created_at))
+    conn.commit()
+    conn.close()
+
+    base_url = str(request.base_url).rstrip('/')
+    trade_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
+    params = {
+        "MerchantID": ECPAY_MERCHANT_ID,
+        "MerchantTradeNo": trade_no,
+        "MerchantTradeDate": trade_date,
+        "PaymentType": "aio",
+        "TotalAmount": str(amount),
+        "TradeDesc": ecpay_url_encode("QT30師傅點數儲值"),
+        "ItemName": f"QT30 接單點數 {points} 點",
+        "ReturnURL": f"{base_url}/api/ecpay/topup-callback",
+        "ClientBackURL": f"{base_url}/tech",
+        "ChoosePayment": "ALL",
+        "EncryptType": "1"
+    }
+
+    check_mac = generate_check_mac_value(params, ECPAY_HASH_KEY, ECPAY_HASH_IV)
+    params["CheckMacValue"] = check_mac
+
+    inputs_html = "".join([f'<input type="hidden" name="{k}" value="{v}" />' for k, v in params.items()])
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>前往綠界儲值支付...</title><meta charset="utf-8"></head>
+    <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#0f172a;color:#fff;">
+        <div style="text-align:center;padding:30px;background:#1e293b;border-radius:12px;border:1px solid #334155;">
+            <h2 style="color:#38bdf8;">正在前往綠界官方安全收銀台...</h2>
+            <p>儲值方案：<b>NT$ {amount}</b> (獲取 <b>{points} 點</b>)</p>
+            <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
+                {inputs_html}
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+@app.post("/api/ecpay/topup-callback")
+async def ecpay_topup_callback(request: Request):
+    form_data = await request.form()
+    data = dict(form_data)
+    trade_no = data.get("MerchantTradeNo")
+    rtn_code = data.get("RtnCode")
+
+    if rtn_code == "1":
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM topup_orders WHERE trade_no = ?", (trade_no,))
+        order = cursor.fetchone()
+        if order and order["status"] != "已付款":
+            cursor.execute("UPDATE topup_orders SET status = '已付款' WHERE trade_no = ?", (trade_no,))
+            cursor.execute("UPDATE technicians SET points = points + ? WHERE phone = ?", (order["points"], order["phone"]))
+            cursor.execute("SELECT points, name FROM technicians WHERE phone = ?", (order["phone"],))
+            tech = cursor.fetchone()
+            conn.commit()
+
+            msg = (
+                f"💎 【QT30 師傅線上儲值成功！】\n"
+                f"------------------------\n"
+                f"🔧 儲值師傅：{tech['name']} ({order['phone']})\n"
+                f"💰 儲值金額：NT$ {order['amount']}\n"
+                f"🎁 增加點數：+{order['points']} 點\n"
+                f"⚡ 目前總餘額：{tech['points']} 點\n"
+                f"------------------------\n"
+                f"款項已入帳綠界正式戶頭！"
+            )
+            send_line_notification(msg)
+        conn.close()
+    return "1|OK"
+
+# --- 案件修改與客戶端金流付款 ---
 @app.patch("/api/cases/{case_id}")
 def update_case(case_id: str, data: CaseUpdate):
     conn = get_db()
     cursor = conn.cursor()
-    
     updates = []
     params = []
     if data.status is not None:
@@ -325,7 +522,7 @@ async def ecpay_callback(request: Request):
             send_line_notification(msg)
     return "1|OK"
 
-# --- 師傅據點與點數 API ---
+# --- 師傅據點 API ---
 @app.get("/api/spots")
 def get_spots():
     conn = get_db()
@@ -347,7 +544,7 @@ def create_spot(spot: CustomSpotCreate):
     conn.close()
     return {"success": True, "spot": {"id": new_id, "name": spot.name, "lat": spot.lat, "lng": spot.lng, "radiusKm": spot.radiusKm, "technicianName": spot.technicianName}}
 
-# --- 客戶發案頁面 (/app) ---
+# --- 消費端發案頁面 (/app) ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -480,7 +677,7 @@ def serve_app_page():
     </html>
     """
 
-# --- 師傅端工作台 (/tech) ---
+# --- 師傅端工作台 (/tech) 整合：接單大廳扣點解鎖 + 線上儲值 + 地圖卡位 ---
 @app.get("/tech", response_class=HTMLResponse)
 def serve_tech_page():
     return """
@@ -489,96 +686,319 @@ def serve_tech_page():
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>QT30 師傅工作台 - 跨區卡位與自訂據點</title>
+      <title>QT30 師傅接單工作台</title>
       <script src="https://cdn.tailwindcss.com"></script>
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     </head>
-    <body class="bg-slate-900 text-slate-100 min-h-screen">
-      <header class="bg-slate-800 border-b border-slate-700 p-4 px-6 flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <div class="text-xs text-slate-400 font-semibold tracking-wide">QT30 全國師傅工作台</div>
-          <div class="flex items-center space-x-2 mt-0.5">
-            <span class="font-mono text-xs bg-slate-700 text-blue-300 px-2 py-0.5 rounded">0912345678</span>
-            <span class="font-bold text-base text-white">王師傅 (北部水電)</span>
+    <body class="bg-slate-950 text-slate-100 min-h-screen">
+      <!-- 頂部導航 -->
+      <header class="bg-slate-900 border-b border-slate-800 p-4 px-6 sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto flex flex-wrap justify-between items-center gap-4">
+          <div>
+            <div class="text-[11px] text-blue-400 font-bold uppercase tracking-wider">QT30 專業師傅平台</div>
+            <div class="flex items-center space-x-2 mt-0.5">
+              <span id="headerPhone" class="font-mono text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">0912345678</span>
+              <span id="headerName" class="font-bold text-base text-white">王師傅 (北部水電)</span>
+            </div>
           </div>
-        </div>
-        <div class="flex items-center space-x-4">
-          <div class="text-right">
-            <span class="text-xs text-slate-400">點數餘額</span>
-            <div class="font-black text-amber-400 text-lg">800 <span class="text-xs text-amber-200">點</span></div>
+          <div class="flex items-center space-x-3">
+            <div class="text-right">
+              <span class="text-[11px] text-slate-400">點數餘額</span>
+              <div class="font-black text-amber-400 text-lg leading-none mt-0.5"><span id="pointsBalance">800</span> <span class="text-xs font-normal text-amber-200/80">點</span></div>
+            </div>
+            <button onclick="switchTab('topup')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow transition">
+              💳 線上儲值
+            </button>
           </div>
-          <button class="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-3 py-2 rounded-lg shadow transition">
-            儲值 $1,000 卡位
-          </button>
         </div>
       </header>
 
-      <main class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-        <div class="bg-gradient-to-r from-blue-900 to-indigo-900 border border-blue-700/50 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-lg">
-          <div>
-            <h2 class="text-base font-bold text-white flex items-center gap-2">
-              📍 全台指標社區「專屬師傅」卡位專區
-            </h2>
-            <p class="text-xs text-blue-200 mt-1">若地圖上沒有您的目標區域，可直接點擊地圖任意位置「自訂新增服務據點」享 15 分鐘優先接單權！</p>
-          </div>
-          <button onclick="document.getElementById('addSpotModal').classList.remove('hidden')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition whitespace-nowrap">
-            ➕ 自訂新增服務地區
+      <!-- 主要分頁切換 -->
+      <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+        <div class="flex border-b border-slate-800 space-x-2 sm:space-x-4">
+          <button id="tabBtn-hall" onclick="switchTab('hall')" class="tab-btn px-4 py-3 font-bold text-sm text-blue-400 border-b-2 border-blue-500 flex items-center gap-1.5">
+            ⚡ 接單大廳 (扣點搶單)
+          </button>
+          <button id="tabBtn-map" onclick="switchTab('map')" class="tab-btn px-4 py-3 font-bold text-sm text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5">
+            🗺️ 跨區地圖卡位
+          </button>
+          <button id="tabBtn-topup" onclick="switchTab('topup')" class="tab-btn px-4 py-3 font-bold text-sm text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5">
+            💎 點數儲值專區
           </button>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden shadow-md">
-          <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80">
-            <span class="text-sm font-bold text-slate-200">🗺️ 服務範圍地圖（點擊地圖即可直接設定新據點）</span>
-            <span class="text-xs text-slate-400">資料已由 SQLite 永久保存</span>
+        <!-- 分頁 1: 接單大廳 -->
+        <section id="tab-hall" class="space-y-4">
+          <div class="flex justify-between items-center bg-slate-900 p-4 rounded-xl border border-slate-800">
+            <div>
+              <h2 class="text-base font-bold text-white">🔥 即時可接修繕案件</h2>
+              <p class="text-xs text-slate-400 mt-0.5">點擊「扣 50 點搶單」即可解鎖客戶電話與完整地址</p>
+            </div>
+            <button onclick="loadHallCases()" class="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition">
+              🔄 重新整理
+            </button>
           </div>
-          <div id="map" class="h-[450px] w-full bg-slate-950"></div>
-        </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-md">
-          <h3 class="text-sm font-bold text-slate-200 mb-3">📋 目前專屬卡位與服務據點一覽</h3>
-          <div id="spotList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            <div class="p-4 bg-slate-900/50 rounded-xl text-xs text-slate-400 text-center">載入中...</div>
+          <div id="casesList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-8 bg-slate-900 rounded-2xl border border-slate-800 text-center text-slate-500 text-sm">載入案件中...</div>
           </div>
-        </div>
-      </main>
+        </section>
 
-      <div id="addSpotModal" class="hidden fixed inset-0 bg-black/70 flex justify-center items-center z-50 p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4">
-          <h3 class="text-lg font-bold text-white">📍 新增自訂服務地區 / 卡位</h3>
+        <!-- 分頁 2: 跨區地圖卡位 -->
+        <section id="tab-map" class="hidden space-y-4">
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+            <div>
+              <h2 class="text-base font-bold text-white">📍 全台專屬社區卡位地圖</h2>
+              <p class="text-xs text-slate-400 mt-0.5">直接點擊地圖任意區域，即可自訂專屬服務據點享 15 分鐘優先搶單權！</p>
+            </div>
+            <button onclick="document.getElementById('addSpotModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+              ➕ 自訂據點
+            </button>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div id="map" class="h-[450px] w-full bg-slate-950"></div>
+          </div>
+          <div id="spotList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+        </section>
+
+        <!-- 分頁 3: 點數儲值專區 -->
+        <section id="tab-topup" class="hidden space-y-6">
+          <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center space-y-2">
+            <h2 class="text-xl font-bold text-white">💳 購買接單點數 (綠界線上支付)</h2>
+            <p class="text-xs text-slate-400">點數可用於解鎖客戶電話、社區卡位租用，扣款成功秒入帳</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- 方案 1 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between hover:border-slate-700 transition">
+              <div>
+                <div class="text-sm font-bold text-slate-300">體驗小額包</div>
+                <div class="text-3xl font-black text-white mt-2">NT$ 500</div>
+                <div class="text-xs text-blue-400 font-bold mt-1">獲得 500 點</div>
+                <p class="text-xs text-slate-400 mt-4 leading-relaxed">適合剛加入平台的新師傅，可解鎖約 10 筆案件聯絡方式。</p>
+              </div>
+              <button onclick="doTopup(500)" class="mt-6 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl text-sm transition">
+                線上刷卡 NT$ 500
+              </button>
+            </div>
+
+            <!-- 方案 2 (熱門) -->
+            <div class="bg-gradient-to-b from-blue-950/60 to-slate-900 border-2 border-blue-500 rounded-2xl p-6 flex flex-col justify-between relative shadow-lg">
+              <span class="absolute -top-3 right-4 bg-blue-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wide">超值推薦</span>
+              <div>
+                <div class="text-sm font-bold text-blue-300">熱門進階包</div>
+                <div class="text-3xl font-black text-white mt-2">NT$ 1,000</div>
+                <div class="text-xs text-emerald-400 font-bold mt-1">獲得 1,100 點 (加贈 100 點)</div>
+                <p class="text-xs text-slate-400 mt-4 leading-relaxed">主打方案！解鎖案件 + 指標社區卡位必備。</p>
+              </div>
+              <button onclick="doTopup(1000)" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-sm shadow transition">
+                線上刷卡 NT$ 1,000
+              </button>
+            </div>
+
+            <!-- 方案 3 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between hover:border-slate-700 transition">
+              <div>
+                <div class="text-sm font-bold text-amber-300">旗艦工班包</div>
+                <div class="text-3xl font-black text-white mt-2">NT$ 3,000</div>
+                <div class="text-xs text-emerald-400 font-bold mt-1">獲得 3,500 點 (加贈 500 點)</div>
+                <p class="text-xs text-slate-400 mt-4 leading-relaxed">大型水電工程行首選，享全區域大量接單與多據點卡位權益。</p>
+              </div>
+              <button onclick="doTopup(3000)" class="mt-6 w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-3 rounded-xl text-sm shadow transition">
+                線上刷卡 NT$ 3,000
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 新增據點彈窗 -->
+      <div id="addSpotModal" class="hidden fixed inset-0 bg-black/75 flex justify-center items-center z-50 p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+          <h3 class="text-lg font-bold text-white">📍 自訂服務地區 / 卡位據點</h3>
           <div>
-            <label class="block text-xs font-semibold text-slate-300">服務地區 / 社區名稱</label>
-            <input type="text" id="newSpotName" placeholder="例如：新北市淡水新市鎮、台中逢甲特區" class="w-full mt-1 p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <label class="block text-xs font-semibold text-slate-300">地區 / 社區名稱</label>
+            <input type="text" id="newSpotName" placeholder="例如：新北市淡水新市鎮" class="w-full mt-1 p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-300">緯度 (Latitude)</label>
-              <input type="number" step="0.0001" id="newSpotLat" class="w-full mt-1 p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white">
+              <label class="block text-xs font-semibold text-slate-300">緯度 (Lat)</label>
+              <input type="number" step="0.0001" id="newSpotLat" class="w-full mt-1 p-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-300">經度 (Longitude)</label>
-              <input type="number" step="0.0001" id="newSpotLng" class="w-full mt-1 p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white">
+              <label class="block text-xs font-semibold text-slate-300">經度 (Lng)</label>
+              <input type="number" step="0.0001" id="newSpotLng" class="w-full mt-1 p-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white">
             </div>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300">服務範圍半徑 (公里)</label>
-            <input type="number" id="newSpotRadius" value="5" class="w-full mt-1 p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="number" id="newSpotRadius" value="5" class="w-full mt-1 p-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white">
           </div>
           <div class="flex space-x-2 pt-2">
-            <button onclick="document.getElementById('addSpotModal').classList.add('hidden')" class="w-1/2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold py-2.5 rounded-lg text-xs transition">
+            <button onclick="document.getElementById('addSpotModal').classList.add('hidden')" class="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-lg text-xs transition">
               取消
             </button>
             <button onclick="saveNewSpot()" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-xs shadow transition">
-              確認卡位並儲存
+              確認卡位
             </button>
           </div>
         </div>
       </div>
 
-      <script>
-        let map;
-        let markers = [];
+      <!-- 圖片放大彈窗 -->
+      <div id="imgModal" class="hidden fixed inset-0 bg-black/80 flex justify-center items-center z-50 p-4" onclick="this.classList.add('hidden')">
+        <img id="modalImg" src="" class="max-w-full max-h-[85vh] rounded-xl shadow-2xl">
+      </div>
 
+      <script>
+        const CURRENT_PHONE = "0912345678";
+        let map, markers = [];
+
+        function viewPhoto(src) {
+          document.getElementById('modalImg').src = src;
+          document.getElementById('imgModal').classList.remove('hidden');
+        }
+
+        function switchTab(tab) {
+          ['hall', 'map', 'topup'].forEach(t => {
+            document.getElementById('tab-' + t).classList.add('hidden');
+            const btn = document.getElementById('tabBtn-' + t);
+            btn.className = 'tab-btn px-4 py-3 font-bold text-sm text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center gap-1.5';
+          });
+          document.getElementById('tab-' + tab).classList.remove('hidden');
+          const activeBtn = document.getElementById('tabBtn-' + tab);
+          activeBtn.className = 'tab-btn px-4 py-3 font-bold text-sm text-blue-400 border-b-2 border-blue-500 flex items-center gap-1.5';
+
+          if (tab === 'map') {
+            setTimeout(() => {
+              if (!map) initMap();
+              else map.invalidateSize();
+            }, 100);
+          }
+        }
+
+        async function loadProfile() {
+          try {
+            const res = await fetch('/api/tech/profile?phone=' + CURRENT_PHONE);
+            const data = await res.json();
+            if (data.success) {
+              document.getElementById('pointsBalance').innerText = data.tech.points;
+              document.getElementById('headerName').innerText = data.tech.name;
+              document.getElementById('headerPhone').innerText = data.tech.phone;
+            }
+          } catch(e) {}
+        }
+
+        async function loadHallCases() {
+          const list = document.getElementById('casesList');
+          try {
+            const res = await fetch('/api/cases?phone=' + CURRENT_PHONE);
+            const data = await res.json();
+            if (!data.cases || data.cases.length === 0) {
+              list.innerHTML = '<div class="col-span-2 p-12 bg-slate-900 rounded-2xl border border-slate-800 text-center text-slate-500 text-sm">目前尚無等待報修的案件</div>';
+              return;
+            }
+            list.innerHTML = data.cases.map(c => `
+              <div class="bg-slate-900 border ${c.unlocked ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'} rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-sm">
+                <div>
+                  <div class="flex justify-between items-start gap-2">
+                    <div>
+                      <span class="inline-block px-2.5 py-0.5 bg-blue-900/60 border border-blue-700/50 text-blue-300 font-bold text-xs rounded-md">${c.item}</span>
+                      <span class="font-mono text-xs text-slate-500 ml-1.5">${c.id}</span>
+                    </div>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded ${c.unlocked ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-700' : 'bg-slate-800 text-slate-400'}">
+                      ${c.unlocked ? '✓ 已解鎖' : '🔒 未解鎖'}
+                    </span>
+                  </div>
+
+                  <div class="mt-3 flex gap-3 items-start">
+                    ${c.photo ? `
+                      <img src="${c.photo}" onclick="viewPhoto('${c.photo}')" class="w-20 h-20 object-cover rounded-xl border border-slate-700 cursor-pointer hover:opacity-80 transition shrink-0" title="點擊放大">
+                    ` : `
+                      <div class="w-20 h-20 bg-slate-800 rounded-xl border border-slate-700 flex items-center justify-center text-xs text-slate-500 shrink-0">無照片</div>
+                    `}
+                    <div class="space-y-1 text-xs">
+                      <div class="font-semibold text-slate-200">📍 修繕地址：<span class="${c.unlocked ? 'text-white font-bold' : 'text-slate-400 font-mono'}">${c.address}</span></div>
+                      <div class="text-slate-300">👤 客戶稱呼：<b>${c.clientName}</b></div>
+                      <div class="text-slate-300">📞 聯絡電話：<span class="${c.unlocked ? 'text-emerald-400 font-bold font-mono text-sm' : 'text-slate-400 font-mono'}">${c.clientPhone}</span></div>
+                      <div class="text-amber-300 font-semibold">💰 客戶預算：NT$ ${c.depositAmount}</div>
+                    </div>
+                  </div>
+
+                  <p class="text-xs text-slate-400 mt-3 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 leading-relaxed">
+                    📝 <b>狀況描述：</b>${c.description}
+                  </p>
+                </div>
+
+                <div class="pt-2 border-t border-slate-800">
+                  ${c.unlocked ? `
+                    <div class="flex gap-2">
+                      <a href="tel:${c.clientPhone}" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs text-center transition flex items-center justify-center gap-1">
+                        📞 立即撥打電話
+                      </a>
+                    </div>
+                  ` : `
+                    <button onclick="unlockCase('${c.id}')" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5">
+                      💎 扣 50 點搶單 (解鎖電話與地址)
+                    </button>
+                  `}
+                </div>
+              </div>
+            `).join('');
+          } catch(e) {}
+        }
+
+        async function unlockCase(caseId) {
+          if (!confirm('確認扣除 50 點數以解鎖此案件的客戶聯絡方式？')) return;
+          try {
+            const res = await fetch(`/api/cases/${caseId}/unlock?phone=${CURRENT_PHONE}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+              alert('🎉 搶單解鎖成功！請立即與客戶聯繫。');
+              loadProfile();
+              loadHallCases();
+            } else {
+              alert(data.message || '解鎖失敗');
+              if (data.message.includes('點數不足')) switchTab('topup');
+            }
+          } catch(e) {
+            alert('請求失敗，請稍後再試');
+          }
+        }
+
+        async function doTopup(amount) {
+          try {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/api/tech/topup';
+            
+            const pInput = document.createElement('input');
+            pInput.type = 'hidden';
+            pInput.name = 'phone';
+            pInput.value = CURRENT_PHONE;
+            
+            const aInput = document.createElement('input');
+            aInput.type = 'hidden';
+            aInput.name = 'amount';
+            aInput.value = amount;
+
+            // 以 JSON 方式送出並跳轉
+            const res = await fetch('/api/tech/topup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: CURRENT_PHONE, amount: amount })
+            });
+            const html = await res.text();
+            document.open();
+            document.write(html);
+            document.close();
+          } catch(e) {
+            alert('儲值發起失敗');
+          }
+        }
+
+        // 地圖功能
         function initMap() {
           map = L.map('map').setView([24.5, 121.0], 8);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -604,12 +1024,12 @@ def serve_tech_page():
 
             const listDiv = document.getElementById('spotList');
             if (!data.spots || data.spots.length === 0) {
-              listDiv.innerHTML = '<div class="col-span-3 text-center text-slate-500 py-4 text-xs">目前尚無卡位據點，請點擊地圖新增</div>';
+              listDiv.innerHTML = '<div class="col-span-3 text-center text-slate-500 py-4 text-xs">目前尚無卡位據點</div>';
               return;
             }
 
             listDiv.innerHTML = data.spots.map(s => `
-              <div class="p-3 bg-slate-900 border border-slate-700/60 rounded-xl flex justify-between items-center">
+              <div class="p-3.5 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center">
                 <div>
                   <div class="font-bold text-sm text-white">${s.name}</div>
                   <div class="text-xs text-blue-400 mt-0.5">${s.technicianName}</div>
@@ -632,9 +1052,7 @@ def serve_tech_page():
 
               markers.push(marker, circle);
             });
-          } catch(e) {
-            console.error(e);
-          }
+          } catch(e) {}
         }
 
         async function saveNewSpot() {
@@ -644,7 +1062,7 @@ def serve_tech_page():
           const radius = parseInt(document.getElementById('newSpotRadius').value) || 5;
 
           if (!name || isNaN(lat) || isNaN(lng)) {
-            alert('請輸入地區名稱與有效經緯度！');
+            alert('請填寫完整資訊！');
             return;
           }
 
@@ -662,17 +1080,18 @@ def serve_tech_page():
             });
             const data = await res.json();
             if (data.success) {
-              alert('🎉 成功卡位並儲存至資料庫：' + name);
+              alert('🎉 成功卡位服務地區：' + name);
               document.getElementById('addSpotModal').classList.add('hidden');
               document.getElementById('newSpotName').value = '';
               loadSpots();
             }
           } catch(e) {
-            alert('儲存失敗，請稍後再試');
+            alert('儲存失敗');
           }
         }
 
-        window.onload = initMap;
+        loadProfile();
+        loadHallCases();
       </script>
     </body>
     </html>
@@ -695,7 +1114,7 @@ def serve_admin_page():
         <header class="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white p-6 rounded-2xl shadow-sm gap-4">
           <div>
             <h1 class="text-2xl font-black text-slate-800">QT30 派工管理後台</h1>
-            <p class="text-sm text-slate-500 mt-1">SQLite 資料庫永久保存案件、照片與金流狀態</p>
+            <p class="text-sm text-slate-500 mt-1">即時掌握全站案件、師傅搶單狀態與金流</p>
           </div>
           <button onclick="loadCases()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow transition">
             🔄 重新整理清單
@@ -711,8 +1130,8 @@ def serve_admin_page():
                   <th class="p-4">客戶資訊</th>
                   <th class="p-4">現場照片</th>
                   <th class="p-4">修繕項目 / 內容</th>
-                  <th class="p-4">應收金額 / 付款狀態</th>
-                  <th class="p-4">派工師傅</th>
+                  <th class="p-4">預算金額 / 付款狀態</th>
+                  <th class="p-4">接單師傅</th>
                   <th class="p-4">案件狀態</th>
                   <th class="p-4 text-center">操作 / 收款</th>
                 </tr>
@@ -738,7 +1157,7 @@ def serve_admin_page():
         function copyPayLink(caseId) {
           const url = window.location.origin + '/api/pay/' + caseId;
           navigator.clipboard.writeText(url).then(() => {
-            alert('💳 專屬付款網址已複製！\\n可以透過 LINE 發給客戶刷卡：\\n' + url);
+            alert('💳 專屬付款網址已複製！\\n' + url);
           });
         }
 
