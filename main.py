@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-app = FastAPI(title="QT30 派工與金流平台")
+app = FastAPI(title="QT30 派工與金流平台 (正式正式上線版)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# LINE 金鑰
+# LINE 金鑰設定
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
     "LINE_CHANNEL_ACCESS_TOKEN",
     "Fqylo2CR5nbZX27rp8sg5F7l7Ik4UrvVTPEAxN9l+gpNd2C7V2LBY6NIEakUsBXvZGJ2yq/bzpv0lXLsMrv2C5c6rrG926TAkHnSZkIEZIS1uywU6XJ4waIONGyQxEVq8ff75muOQ4S9wF1mztzz8QdB04t89/1O/w1cDnyilFU="
@@ -44,11 +44,12 @@ def send_line_notification(message_text: str):
     except Exception as e:
         print(f"LINE 推播發送失敗: {e}")
 
-# 綠界測試金流
-ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "2000132")
-ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "5294y06JbISpM5x9")
-ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "v77hoKGq4kWxNNIS")
-ECPAY_PAYMENT_URL = "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
+# 綠界正式環境金鑰
+ECPAY_MERCHANT_ID = os.getenv("ECPAY_MERCHANT_ID", "3513009")
+ECPAY_HASH_KEY = os.getenv("ECPAY_HASH_KEY", "LefLmiHiXMuHMPhA")
+ECPAY_HASH_IV = os.getenv("ECPAY_HASH_IV", "Vcz5eQfMDiRe3ZSy")
+# 正式金流付款跳轉網址
+ECPAY_PAYMENT_URL = "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
 
 def ecpay_url_encode(s: str) -> str:
     encoded = urllib.parse.quote_plus(s)
@@ -73,7 +74,7 @@ class CaseCreate(BaseModel):
     item: Optional[str] = "一般修繕"
     description: Optional[str] = "無詳細描述"
     depositAmount: Optional[int] = 500
-    photo: Optional[str] = None  # 支援圖片 Base64
+    photo: Optional[str] = None
 
 class CaseUpdate(BaseModel):
     status: Optional[str] = None
@@ -101,21 +102,21 @@ def create_case(data: CaseCreate):
     }
     cases_db.insert(0, new_case)
 
-    photo_tag = "📷 【已附現場損壞照片】" if data.photo else "📷 【未附現場照片】"
+    photo_tag = "📷 【已附現場照片】" if data.photo else "📷 【未附現場照片】"
 
     msg = (
-        f"🔔 【QT30 新案件通報】\n"
+        f"🔔 【QT30 正式新進報修單】\n"
         f"------------------------\n"
         f"📌 案件編號：{new_case['id']}\n"
-        f"👤 報修客戶：{new_case['clientName']}\n"
+        f"👤 客戶姓名：{new_case['clientName']}\n"
         f"📞 聯絡電話：{new_case['clientPhone']}\n"
         f"📍 修繕地址：{new_case['address']}\n"
-        f"🔧 修繕項目：{new_case['item']}\n"
-        f"💰 預估定金：NT$ {new_case['depositAmount']}\n"
+        f"🔧 報修項目：{new_case['item']}\n"
+        f"💰 預收定金：NT$ {new_case['depositAmount']}\n"
         f"📝 狀況描述：{new_case['description']}\n"
         f"{photo_tag}\n"
         f"------------------------\n"
-        f"⚡ 系統已建立訂單，請至後台查看照片並指派師傅！"
+        f"⚡ 請至後台確認並安排師傅！"
     )
     send_line_notification(msg)
     return {"success": True, "case": new_case}
@@ -150,11 +151,11 @@ def get_payment_page(case_id: str, request: Request):
     html_content = f"""
     <!DOCTYPE html>
     <html>
-    <head><title>前往綠界金流支付...</title><meta charset="utf-8"></head>
+    <head><title>前往綠界支付...</title><meta charset="utf-8"></head>
     <body onload="document.getElementById('ecpay_form').submit();" style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f8fafc;">
         <div style="text-align:center;padding:30px;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-            <h2 style="color:#0284c7;">正在安全跳轉至綠界金流收銀台...</h2>
-            <p>案件編號：<b>{target['id']}</b> | 定金金額：<b>NT$ {target['depositAmount']}</b></p>
+            <h2 style="color:#0284c7;">正在前往綠界官方安全收銀台...</h2>
+            <p>案件編號：<b>{target['id']}</b> | 應付金額：<b>NT$ {target['depositAmount']}</b></p>
             <form id="ecpay_form" method="POST" action="{ECPAY_PAYMENT_URL}">
                 {inputs_html}
             </form>
@@ -176,14 +177,14 @@ async def ecpay_callback(request: Request):
             if c["tradeNo"] == trade_no:
                 c["paymentStatus"] = "已付款"
                 msg = (
-                    f"💳 【QT30 案件已付款通知】\n"
+                    f"🎉 【QT30 真實款項已入帳！】\n"
                     f"------------------------\n"
                     f"📌 案件編號：{c['id']}\n"
                     f"👤 客戶：{c['clientName']}\n"
-                    f"💰 付款金額：NT$ {c['depositAmount']}\n"
-                    f"🎉 付款狀態：已完成付款 (綠界測試金流)\n"
+                    f"💰 入帳金額：NT$ {c['depositAmount']}\n"
+                    f"💳 付款方式：正式金流扣款成功\n"
                     f"------------------------\n"
-                    f"請至派工後台指派師傅！"
+                    f"款項已進入您的綠界帳戶，請盡速派工！"
                 )
                 send_line_notification(msg)
                 break
@@ -206,7 +207,6 @@ def update_case(case_id: str, data: CaseUpdate):
             return {"success": True, "case": c}
     raise HTTPException(status_code=404, detail="找不到案件")
 
-# --- 客戶發案頁面 (/app) 支援照片上傳與預覽 ---
 @app.get("/app", response_class=HTMLResponse)
 def serve_app_page():
     return """
@@ -222,7 +222,7 @@ def serve_app_page():
       <div class="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-blue-600 p-6 text-white text-center">
           <h1 class="text-2xl font-bold">QT30 房屋修繕預約</h1>
-          <p class="text-blue-100 text-sm mt-1">拍照上傳現場，立即通知專業師傅</p>
+          <p class="text-blue-100 text-sm mt-1">線上預約專業師傅，支援即時金流定金支付</p>
         </div>
         
         <form id="caseForm" class="p-6 space-y-4">
@@ -277,7 +277,7 @@ def serve_app_page():
           <p class="text-xs text-gray-500 mt-1">師傅已收到 LINE 即時推播通知</p>
           <div class="mt-4">
             <a id="payBtn" href="#" class="inline-block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow">
-              💳 前往綠界刷卡支付定金 (NT$ <span id="resAmount">500</span>)
+              💳 前往綠界線上支付定金 (NT$ <span id="resAmount">500</span>)
             </a>
           </div>
         </div>
@@ -339,7 +339,6 @@ def serve_app_page():
     </html>
     """
 
-# --- 派工管理後台 (/admin) 支援照片放大預覽 ---
 @app.get("/admin", response_class=HTMLResponse)
 def serve_admin_page():
     return """
@@ -386,7 +385,6 @@ def serve_admin_page():
         </div>
       </div>
 
-      <!-- 圖片放大彈窗 -->
       <div id="imgModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4" onclick="this.classList.add('hidden')">
         <img id="modalImg" src="" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl">
       </div>
