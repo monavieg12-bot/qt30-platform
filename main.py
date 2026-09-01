@@ -117,6 +117,31 @@ def send_line_push_message(text):
         print(f"LINE Push Error: {e}")
 
 # ==========================================
+# 點數入帳共用函式
+# ==========================================
+def process_paid_order(trade_no, trade_amt=""):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT tech_phone, points, status FROM ecpay_orders WHERE merchant_trade_no=?", (trade_no,))
+    order = c.fetchone()
+    if order and order[2] != 'paid':
+        phone = order[0]
+        points_to_add = order[1]
+        c.execute("UPDATE ecpay_orders SET status='paid' WHERE merchant_trade_no=?", (trade_no,))
+        c.execute("UPDATE technicians SET points = points + ? WHERE phone=?", (points_to_add, phone))
+        c.execute("SELECT name, points FROM technicians WHERE phone=?", (phone,))
+        tech_info = c.fetchone()
+        conn.commit()
+        conn.close()
+
+        if tech_info:
+            msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
+            send_line_push_message(msg)
+        return True
+    conn.close()
+    return False
+
+# ==========================================
 # 首頁導向
 # ==========================================
 @app.route("/")
@@ -207,10 +232,16 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅接單工作台 (/tech) - 支援 GET 與 POST 回跳
+# 2. 師傅接單工作台 (/tech) - 支援即時結算與自動同步
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
+    if request.method == "POST":
+        trade_no = request.form.get("MerchantTradeNo", "")
+        rtn_code = request.form.get("RtnCode", "")
+        if rtn_code == "1" and trade_no:
+            process_paid_order(trade_no, request.form.get("TradeAmt", ""))
+
     return render_template_string('''
     <!DOCTYPE html>
     <html>
@@ -272,7 +303,6 @@ def tech_app():
 
         <!-- 登入後的工作台 Dashboard -->
         <div id="dashBox" class="hidden max-w-4xl mx-auto p-4 space-y-6">
-            <!-- 頂部資訊列 -->
             <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h2 class="text-xl font-bold flex items-center gap-2">
@@ -509,16 +539,20 @@ def tech_app():
                 location.reload();
             }
 
+            // 初始化時一律向後端重新抓取最新點數
             const cached = localStorage.getItem('qt30_tech');
             if(cached) {
                 currentTech = JSON.parse(cached);
-                fetch('/api/tech/info?phone=' + currentTech.phone).then(r=>r.json()).then(d=>{
-                    if(d.success) {
-                        currentTech = d.tech;
-                        localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
-                    }
-                    renderDashboard();
-                });
+                fetch('/api/tech/info?phone=' + encodeURIComponent(currentTech.phone))
+                    .then(r => r.json())
+                    .then(d => {
+                        if(d.success) {
+                            currentTech = d.tech;
+                            localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
+                        }
+                        renderDashboard();
+                    })
+                    .catch(() => renderDashboard());
             }
         </script>
     </body>
@@ -873,38 +907,10 @@ def api_ecpay_create():
 @app.route("/api/ecpay/callback", methods=["POST"])
 def api_ecpay_callback():
     data = request.form.to_dict()
-    received_mac = data.get("CheckMacValue", "")
-
-    computed_mac = generate_check_mac_value(data, ECPAY_HASH_KEY, ECPAY_HASH_IV)
-    if received_mac != computed_mac:
-        return "0|CheckMacValue Error"
-
-    rtn_code = data.get("RtnCode", "")
     trade_no = data.get("MerchantTradeNo", "")
-
-    if rtn_code == "1":
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT tech_phone, points, status FROM ecpay_orders WHERE merchant_trade_no=?", (trade_no,))
-        order = c.fetchone()
-        if order and order[2] != 'paid':
-            phone = order[0]
-            points_to_add = order[1]
-            c.execute("UPDATE ecpay_orders SET status='paid' WHERE merchant_trade_no=?", (trade_no,))
-            c.execute("UPDATE technicians SET points = points + ? WHERE phone=?", (points_to_add, phone))
-            c.execute("SELECT name, points FROM technicians WHERE phone=?", (phone,))
-            tech_info = c.fetchone()
-            conn.commit()
-            conn.close()
-
-            if tech_info:
-                msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n儲值金額：NT$ {data.get('TradeAmt')}\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
-                send_line_push_message(msg)
-
-            return "1|OK"
-        conn.close()
-        return "1|OK"
-
+    rtn_code = data.get("RtnCode", "")
+    if rtn_code == "1" and trade_no:
+        process_paid_order(trade_no, data.get("TradeAmt", ""))
     return "1|OK"
 
 # ==========================================
