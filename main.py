@@ -15,7 +15,6 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin888")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 ADMIN_LINE_USER_ID = os.environ.get("ADMIN_LINE_USER_ID", "")
 
-# 綠界官方標準測試特店參數
 ECPAY_MERCHANT_ID = "3002607"
 ECPAY_HASH_KEY = "pwFHCqoQZGmho4w6"
 ECPAY_HASH_IV = "EkRm7iFT261dpevs"
@@ -117,7 +116,7 @@ def send_line_push_message(text):
         print(f"LINE Push Error: {e}")
 
 # ==========================================
-# 點數入帳共用函式
+# 點數入帳共用核心函式
 # ==========================================
 def process_paid_order(trade_no, trade_amt=""):
     conn = sqlite3.connect(DB_FILE)
@@ -135,7 +134,8 @@ def process_paid_order(trade_no, trade_amt=""):
         conn.close()
 
         if tech_info:
-            msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
+            amt_display = trade_amt if trade_amt else "500"
+            msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n儲值金額：NT$ {amt_display}\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
             send_line_push_message(msg)
         return True
     conn.close()
@@ -232,15 +232,20 @@ def client_app():
     ''')
 
 # ==========================================
-# 2. 師傅接單工作台 (/tech) - 支援即時結算與自動同步
+# 2. 師傅接單工作台 (/tech)
 # ==========================================
 @app.route("/tech", methods=["GET", "POST"])
 def tech_app():
+    # 綠界導回時立即結算入帳
     if request.method == "POST":
         trade_no = request.form.get("MerchantTradeNo", "")
         rtn_code = request.form.get("RtnCode", "")
         if rtn_code == "1" and trade_no:
             process_paid_order(trade_no, request.form.get("TradeAmt", ""))
+    else:
+        trade_no = request.args.get("MerchantTradeNo", "")
+        if trade_no:
+            process_paid_order(trade_no)
 
     return render_template_string('''
     <!DOCTYPE html>
@@ -301,7 +306,7 @@ def tech_app():
             </div>
         </div>
 
-        <!-- 登入後的工作台 Dashboard -->
+        <!-- Dashboard -->
         <div id="dashBox" class="hidden max-w-4xl mx-auto p-4 space-y-6">
             <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -321,7 +326,7 @@ def tech_app():
                 </div>
             </div>
 
-            <!-- 分頁按鈕 -->
+            <!-- 分頁 -->
             <div class="flex border-b border-slate-700 space-x-6 text-sm font-bold">
                 <button onclick="showSection('orders')" id="btnTabOrders" class="text-amber-400 border-b-2 border-amber-400 pb-2">📋 接單大廳 (扣點搶單)</button>
                 <button onclick="showSection('topup')" id="btnTabTopup" class="text-slate-400 pb-2">💎 點數儲值專區</button>
@@ -336,7 +341,7 @@ def tech_app():
                 <div id="ordersList" class="space-y-3"></div>
             </div>
 
-            <!-- 2. 線上儲值專區 (綠界刷卡) -->
+            <!-- 2. 線上儲值專區 -->
             <div id="sectionTopup" class="hidden bg-slate-800 p-6 rounded-2xl border border-slate-700 space-y-6">
                 <div>
                     <h3 class="text-xl font-bold text-amber-400">💎 師傅在線購點</h3>
@@ -395,7 +400,7 @@ def tech_app():
                 if(data.success) {
                     currentTech = data.tech;
                     localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
-                    renderDashboard();
+                    syncTechInfo();
                 } else {
                     alert(data.message || '登入失敗');
                 }
@@ -420,7 +425,7 @@ def tech_app():
                     alert('🎉 註冊成功！系統已贈送 100 點體驗點數。');
                     currentTech = data.tech;
                     localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
-                    renderDashboard();
+                    syncTechInfo();
                 } else {
                     alert(data.message || '註冊失敗');
                 }
@@ -434,6 +439,20 @@ def tech_app():
                 document.getElementById('userArea').innerText = currentTech.area || '全區';
                 document.getElementById('userPoints').innerText = currentTech.points;
                 loadOrders();
+            }
+
+            // 即時向伺服器同步最新點數
+            async function syncTechInfo() {
+                if(!currentTech || !currentTech.phone) return;
+                try {
+                    const res = await fetch('/api/tech/info?phone=' + encodeURIComponent(currentTech.phone));
+                    const d = await res.json();
+                    if(d.success) {
+                        currentTech = d.tech;
+                        localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
+                    }
+                } catch(e){}
+                renderDashboard();
             }
 
             function showSection(sec) {
@@ -504,6 +523,7 @@ def tech_app():
                 }
             }
 
+            // 發起綠界線上付款
             async function payECPay(amount, points) {
                 if(!currentTech) return;
                 const res = await fetch('/api/ecpay/create_payment', {
@@ -539,20 +559,10 @@ def tech_app():
                 location.reload();
             }
 
-            // 初始化時一律向後端重新抓取最新點數
             const cached = localStorage.getItem('qt30_tech');
             if(cached) {
                 currentTech = JSON.parse(cached);
-                fetch('/api/tech/info?phone=' + encodeURIComponent(currentTech.phone))
-                    .then(r => r.json())
-                    .then(d => {
-                        if(d.success) {
-                            currentTech = d.tech;
-                            localStorage.setItem('qt30_tech', JSON.stringify(currentTech));
-                        }
-                        renderDashboard();
-                    })
-                    .catch(() => renderDashboard());
+                syncTechInfo();
             }
         </script>
     </body>
@@ -888,8 +898,8 @@ def api_ecpay_create():
         "TradeDesc": "QT30_Points_Topup",
         "ItemName": f"QT30_Points_{points}pts",
         "ReturnURL": f"{BASE_URL}/api/ecpay/callback",
-        "ClientBackURL": f"{BASE_URL}/tech",
-        "OrderResultURL": f"{BASE_URL}/tech",
+        "ClientBackURL": f"{BASE_URL}/tech?MerchantTradeNo={trade_no}",
+        "OrderResultURL": f"{BASE_URL}/tech?MerchantTradeNo={trade_no}",
         "ChoosePayment": "Credit",
         "EncryptType": "1",
         "NeedExtraPaidInfo": "Y",
