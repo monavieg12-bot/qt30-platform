@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify, render_template_string, redirect
 app = Flask(__name__)
 
 # ==========================================
-# 核心設定與金流參數
+# 核心設定與綠界正式金流參數（已寫入最新金鑰）
 # ==========================================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin888")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
@@ -17,8 +17,8 @@ ADMIN_LINE_USER_ID = os.environ.get("ADMIN_LINE_USER_ID", "")
 
 # 綠界正式環境參數
 ECPAY_MERCHANT_ID = os.environ.get("ECPAY_MERCHANT_ID", "3513009")
-ECPAY_HASH_KEY = os.environ.get("ECPAY_HASH_KEY", "bVfP4c3B8vLqW1zX")
-ECPAY_HASH_IV = os.environ.get("ECPAY_HASH_IV", "9sD2kL5pM7nQ4rT6")
+ECPAY_HASH_KEY = os.environ.get("ECPAY_HASH_KEY", "LefLmiHiXMuHMPhA")
+ECPAY_HASH_IV = os.environ.get("ECPAY_HASH_IV", "Vcz5eQfMDiRe3ZSy")
 ECPAY_API_URL = "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
 BASE_URL = os.environ.get("BASE_URL", "https://qt30-platform.onrender.com")
 
@@ -81,17 +81,11 @@ init_db()
 # 綠界 CheckMacValue 產生器
 # ==========================================
 def generate_check_mac_value(params, hash_key, hash_iv):
-    # 1. 排除 CheckMacValue 欄位
     filtered_params = {k: v for k, v in params.items() if k != 'CheckMacValue'}
-    # 2. 依照鍵名由小到大排序 (A-Z)
     sorted_params = sorted(filtered_params.items(), key=lambda x: x[0])
-    # 3. 組成查詢字串
     param_str = "&".join([f"{k}={v}" for k, v in sorted_params])
-    # 4. 前後加入 HashKey 與 HashIV
     raw_str = f"HashKey={hash_key}&{param_str}&HashIV={hash_iv}"
-    # 5. URL Encode (符合 .NET 編碼規則)
     encoded_str = urllib.parse.quote_plus(raw_str).lower()
-    # 修正特定字元
     encoded_str = (encoded_str
                    .replace('%21', '!')
                    .replace('%2a', '*')
@@ -102,7 +96,6 @@ def generate_check_mac_value(params, hash_key, hash_iv):
                    .replace('%5f', '_')
                    .replace('%2e', '.')
                    )
-    # 6. SHA256 加密並轉大寫
     return hashlib.sha256(encoded_str.encode('utf-8')).hexdigest().upper()
 
 # ==========================================
@@ -510,7 +503,6 @@ def tech_app():
                 });
                 const data = await res.json();
                 if(data.success) {
-                    // 自動建立隱藏 Form 並 POST 到綠界收銀台
                     const form = document.createElement('form');
                     form.method = 'POST';
                     form.action = data.ecpay_url;
@@ -533,11 +525,9 @@ def tech_app():
                 location.reload();
             }
 
-            // 自動恢復登入狀態
             const cached = localStorage.getItem('qt30_tech');
             if(cached) {
                 currentTech = JSON.parse(cached);
-                // 重新同步最新點數與狀態
                 fetch('/api/tech/info?phone=' + currentTech.phone).then(r=>r.json()).then(d=>{
                     if(d.success) {
                         currentTech = d.tech;
@@ -733,7 +723,6 @@ def admin_page():
 # 4. 後端 API 集合
 # ==========================================
 
-# 客戶送出報修單
 @app.route("/api/orders", methods=["GET", "POST"])
 def api_orders():
     conn = sqlite3.connect(DB_FILE)
@@ -749,12 +738,10 @@ def api_orders():
         conn.commit()
         conn.close()
 
-        # LINE 推播通知總管理員
         msg = f"🔔 【QT30 新修繕案件通報！】\n單號：#{order_id}\n客戶：{d['name']} ({d['phone']})\n類別：{d['category']}\n地點：{d['address']}\n說明：{d['description']}\n預算：{d.get('budget', '面議')}"
         send_line_push_message(msg)
         return jsonify({"success": True, "order_id": order_id})
 
-    # GET
     c.execute("SELECT id, name, phone, address, category, description, budget, status, taken_by, created_at FROM orders ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
@@ -767,7 +754,6 @@ def api_orders():
         })
     return jsonify(result)
 
-# 師傅註冊
 @app.route("/api/tech/register", methods=["POST"])
 def api_tech_register():
     d = request.json
@@ -783,7 +769,6 @@ def api_tech_register():
         conn.commit()
         conn.close()
 
-        # LINE 推播通知總管理員審核
         msg = f"🛡️ 【QT30 新師傅實名註冊審核】\n姓名：{d['name']}\n手機：{phone}\n專長：{d.get('skills', '未填')}\n地區：{d.get('area', '全區')}\n\n請前往總控制台 /admin 進行核准。"
         send_line_push_message(msg)
         return jsonify({"success": True})
@@ -791,7 +776,6 @@ def api_tech_register():
         conn.close()
         return jsonify({"success": False, "message": "此手機號碼已經註冊過！"})
 
-# 師傅登入
 @app.route("/api/tech/login", methods=["POST"])
 def api_tech_login():
     d = request.json
@@ -811,7 +795,6 @@ def api_tech_login():
         })
     return jsonify({"success": False, "message": "帳號或密碼錯誤！"})
 
-# 獲取師傅資訊
 @app.route("/api/tech/info")
 def api_tech_info():
     phone = request.args.get("phone", "").strip()
@@ -830,7 +813,6 @@ def api_tech_info():
         })
     return jsonify({"success": False})
 
-# 師傅扣點搶單
 @app.route("/api/tech/take_order", methods=["POST"])
 def api_tech_take_order():
     d = request.json
@@ -839,7 +821,6 @@ def api_tech_take_order():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # 驗證師傅狀態與點數
     c.execute("SELECT name, points, status FROM technicians WHERE phone=?", (phone,))
     t = c.fetchone()
     if not t or t[2] != 'approved':
@@ -849,21 +830,18 @@ def api_tech_take_order():
         conn.close()
         return jsonify({"success": False, "message": "點數不足 50 點！"})
 
-    # 檢查案件是否已被搶
     c.execute("SELECT status, name, phone, address FROM orders WHERE id=?", (order_id,))
     o = c.fetchone()
     if not o or o[0] == 'taken':
         conn.close()
         return jsonify({"success": False, "message": "該案件已被其他師傅搶接！"})
 
-    # 扣 50 點並標記案件
     new_points = t[1] - 50
     c.execute("UPDATE technicians SET points=? WHERE phone=?", (new_points, phone))
     c.execute("UPDATE orders SET status='taken', taken_by=? WHERE id=?", (f"{t[0]} ({phone})", order_id))
     conn.commit()
     conn.close()
 
-    # LINE 推播通知
     send_line_push_message(f"⚡ 【QT30 案件已被搶接！】\n單號：#{order_id}\n接單師傅：{t[0]} ({phone})\n師傅剩餘點數：{new_points} 點")
     return jsonify({"success": True, "points": new_points})
 
@@ -871,7 +849,6 @@ def api_tech_take_order():
 # 5. 綠界金流串接核心 (/api/ecpay/...)
 # ==========================================
 
-# 建立綠界信用卡支付訂單
 @app.route("/api/ecpay/create_payment", methods=["POST"])
 def api_ecpay_create():
     d = request.json
@@ -879,11 +856,9 @@ def api_ecpay_create():
     amount = int(d['amount'])
     points = int(d['points'])
 
-    # 綠界交易單號 (20字元以內唯一碼)
     trade_no = f"QT{datetime.now().strftime('%Y%m%d%H%M%S')}{int(datetime.now().microsecond/1000):03d}"
     trade_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
-    # 紀錄至暫存交易表
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("INSERT INTO ecpay_orders VALUES (?, ?, ?, ?, 'unpaid', ?)",
@@ -891,7 +866,6 @@ def api_ecpay_create():
     conn.commit()
     conn.close()
 
-    # 組裝送給綠界的標準參數表
     params = {
         "MerchantID": ECPAY_MERCHANT_ID,
         "MerchantTradeNo": trade_no,
@@ -909,7 +883,6 @@ def api_ecpay_create():
         "DeviceSource": "M"
     }
 
-    # 產生驗證碼 CheckMacValue
     params["CheckMacValue"] = generate_check_mac_value(params, ECPAY_HASH_KEY, ECPAY_HASH_IV)
 
     return jsonify({
@@ -918,13 +891,11 @@ def api_ecpay_create():
         "params": params
     })
 
-# 綠界付款結果背景回傳 Callback (綠界 Server to Server)
 @app.route("/api/ecpay/callback", methods=["POST"])
 def api_ecpay_callback():
     data = request.form.to_dict()
     received_mac = data.get("CheckMacValue", "")
 
-    # 驗證綠界回傳的 CheckMacValue
     computed_mac = generate_check_mac_value(data, ECPAY_HASH_KEY, ECPAY_HASH_IV)
     if received_mac != computed_mac:
         return "0|CheckMacValue Error"
@@ -932,7 +903,7 @@ def api_ecpay_callback():
     rtn_code = data.get("RtnCode", "")
     trade_no = data.get("MerchantTradeNo", "")
 
-    if rtn_code == "1":  # 交易成功
+    if rtn_code == "1":
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT tech_phone, points, status FROM ecpay_orders WHERE merchant_trade_no=?", (trade_no,))
@@ -940,17 +911,13 @@ def api_ecpay_callback():
         if order and order[2] != 'paid':
             phone = order[0]
             points_to_add = order[1]
-            # 更新訂單狀態
             c.execute("UPDATE ecpay_orders SET status='paid' WHERE merchant_trade_no=?", (trade_no,))
-            # 為師傅增加點數
             c.execute("UPDATE technicians SET points = points + ? WHERE phone=?", (points_to_add, phone))
-            # 查詢師傅姓名與最新點數
             c.execute("SELECT name, points FROM technicians WHERE phone=?", (phone,))
             tech_info = c.fetchone()
             conn.commit()
             conn.close()
 
-            # LINE 即時推播通報管理員收錢成功
             if tech_info:
                 msg = f"💎 【QT30 師傅線上儲值成功！】\n師傅：{tech_info[0]} ({phone})\n儲值金額：NT$ {data.get('TradeAmt')}\n獲得點數：+{points_to_add} 點\n目前總餘額：{tech_info[1]} 點\n交易單號：{trade_no}"
                 send_line_push_message(msg)
