@@ -16,9 +16,9 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 ADMIN_LINE_USER_ID = os.environ.get("ADMIN_LINE_USER_ID", "")
 
 # 綠界正式環境參數
-ECPAY_MERCHANT_ID = os.environ.get("ECPAY_MERCHANT_ID", "3513009")
-ECPAY_HASH_KEY = os.environ.get("ECPAY_HASH_KEY", "LefLmiHiXMuHMPhA")
-ECPAY_HASH_IV = os.environ.get("ECPAY_HASH_IV", "Vcz5eQfMDiRe3ZSy")
+ECPAY_MERCHANT_ID = "3513009"
+ECPAY_HASH_KEY = "LefLmiHiXMuHMPhA"
+ECPAY_HASH_IV = "Vcz5eQfMDiRe3ZSy"
 ECPAY_API_URL = "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5"
 BASE_URL = os.environ.get("BASE_URL", "https://qt30-platform.onrender.com")
 
@@ -78,24 +78,30 @@ def init_db():
 init_db()
 
 # ==========================================
-# 綠界 CheckMacValue 產生器
+# 綠界官方標準 CheckMacValue 演算法
 # ==========================================
 def generate_check_mac_value(params, hash_key, hash_iv):
-    filtered_params = {k: v for k, v in params.items() if k != 'CheckMacValue'}
-    sorted_params = sorted(filtered_params.items(), key=lambda x: x[0])
+    # 1. 排除 CheckMacValue 欄位
+    filtered_params = {k: str(v) for k, v in params.items() if k != 'CheckMacValue'}
+    # 2. 依照參數名稱由小到大排序 (A-Z)
+    sorted_params = sorted(filtered_params.items(), key=lambda x: x[0].lower())
+    # 3. 組合參數字串
     param_str = "&".join([f"{k}={v}" for k, v in sorted_params])
+    # 4. 前後加上 HashKey 與 HashIV
     raw_str = f"HashKey={hash_key}&{param_str}&HashIV={hash_iv}"
+    # 5. URL Encode (轉為小寫)
     encoded_str = urllib.parse.quote_plus(raw_str).lower()
+    # 6. 依照綠界規範進行特定字元替換
     encoded_str = (encoded_str
+                   .replace('%2d', '-')
+                   .replace('%5f', '_')
+                   .replace('%2e', '.')
                    .replace('%21', '!')
                    .replace('%2a', '*')
                    .replace('%28', '(')
                    .replace('%29', ')')
-                   .replace('%20', '+')
-                   .replace('%2d', '-')
-                   .replace('%5f', '_')
-                   .replace('%2e', '.')
-                   )
+                   .replace('%20', '+'))
+    # 7. SHA256 雜湊並轉為全大寫
     return hashlib.sha256(encoded_str.encode('utf-8')).hexdigest().upper()
 
 # ==========================================
@@ -872,8 +878,8 @@ def api_ecpay_create():
         "MerchantTradeDate": trade_date,
         "PaymentType": "aio",
         "TotalAmount": str(amount),
-        "TradeDesc": urllib.parse.quote("QT30師傅點數儲值"),
-        "ItemName": f"QT30修繕派工點數{points}點",
+        "TradeDesc": "QT30_Points_Topup",
+        "ItemName": f"QT30_Points_{points}pts",
         "ReturnURL": f"{BASE_URL}/api/ecpay/callback",
         "ClientBackURL": f"{BASE_URL}/tech",
         "OrderResultURL": f"{BASE_URL}/tech",
